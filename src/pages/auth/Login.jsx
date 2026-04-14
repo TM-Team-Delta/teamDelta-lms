@@ -54,7 +54,9 @@ const Login = () => {
     }
 
     if (result.requiresVerification) {
-      navigate('/verify-email', { state: { email: formData.email } });
+      navigate('/verify-email', {
+        state: { email: formData.email, password: formData.password },
+      });
       return;
     }
 

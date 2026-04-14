@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
 import { Search, Bell, MessageSquare, X, Flame, Menu } from 'lucide-react';
-import sidepic from '../../assets/sidepic.jpg';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import UserAvatar from '../common/UserAvatar';
 
 const DashboardHeader = ({ onMenuClick }) => {
   const [showSearch, setShowSearch] = useState(false);
@@ -11,6 +11,8 @@ const DashboardHeader = ({ onMenuClick }) => {
   const streakDays = Number(
     profile?.stats?.streakDays || profile?.streakDays || 0
   );
+  const displayName =
+    `${profile?.firstName || ''} ${profile?.lastName || ''}`.trim() || 'User';
 
   // Determine page title based on route
   const getPageTitle = () => {
@@ -122,10 +124,14 @@ const DashboardHeader = ({ onMenuClick }) => {
           className='block rounded-full transition hover:opacity-90'
           aria-label='Go to profile page'
         >
-          <img
-            src={profile?.profilePhotoUrl || sidepic}
+          <UserAvatar
+            src={profile?.profilePhotoUrl}
             alt='User profile'
-            className='h-10 w-10 rounded-full object-cover sm:h-11 sm:w-11'
+            firstName={profile?.firstName}
+            lastName={profile?.lastName}
+            name={displayName}
+            className='h-10 w-10 sm:h-11 sm:w-11 object-cover'
+            initialsClassName='text-xs sm:text-sm'
           />
         </Link>
       </div>

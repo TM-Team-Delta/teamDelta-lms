@@ -5,9 +5,21 @@ import Card from '../../components/ui/Card';
 import NotificationsList from '../../components/notifications/NotificationsList';
 import NotificationStats from '../../components/notifications/NotificationStats';
 import NotificationsSkeleton from '../../components/notifications/NotificationsSkeleton';
+import { assignmentService } from '../../services/assignment';
+import { coursesService } from '../../services/courses';
 import { notificationsService } from '../../services/notifications';
+import { useAuth } from '../../context/AuthContext';
+import { buildMergedAssignments } from '../../utils/assignmentData';
+import {
+  buildGeneratedNotifications,
+  buildNotificationSummary,
+  buildNotificationTabs,
+  mergeNotifications,
+} from '../../utils/notificationData';
+import { normalizeCourseList } from '../../utils/courseApi';
 
 const Notifications = () => {
+  const { profile } = useAuth();
   const [activeTab, setActiveTab] = useState('all');
   const cachedNotifications = notificationsService.peekNotifications();
   const [notifications, setNotifications] = useState(
@@ -34,10 +46,45 @@ const Notifications = () => {
           setIsLoading(false);
         }
 
-        const response = await notificationsService.getNotifications();
-        setNotifications(response.data?.notifications || []);
-        setSummary(response.data?.summary || null);
-        setTabs(response.data?.tabs || null);
+        const [response, enrolledCoursesResponse, assignmentsResponse] =
+          await Promise.all([
+            notificationsService.getNotifications(),
+            coursesService.getEnrolledCourses().catch(() => ({ data: [] })),
+            assignmentService.getAssignments().catch(() => ({ data: [] })),
+          ]);
+
+        const enrolledCourses = normalizeCourseList(enrolledCoursesResponse);
+        const detailedResponses =
+          enrolledCourses.length > 0
+            ? await coursesService.getDetailedCourses(
+                enrolledCourses.map((course) => course.id)
+              )
+            : [];
+        const detailedCourses =
+          detailedResponses.length > 0
+            ? detailedResponses.map((courseResponse) =>
+                normalizeCourseList({
+                  data: [courseResponse?.data || courseResponse],
+                })[0]
+              )
+            : enrolledCourses;
+        const assignmentSummary = buildMergedAssignments({
+          assignmentsPayload: assignmentsResponse,
+          courses: detailedCourses,
+        });
+        const generatedNotifications = buildGeneratedNotifications({
+          courses: detailedCourses,
+          assignments: assignmentSummary.assignments,
+          profile,
+        });
+        const mergedNotifications = mergeNotifications({
+          apiNotifications: response.data?.notifications || [],
+          generatedNotifications,
+        });
+
+        setNotifications(mergedNotifications);
+        setSummary(buildNotificationSummary(mergedNotifications));
+        setTabs(buildNotificationTabs(mergedNotifications));
         setPagination(response.data?.pagination || null);
       } catch (err) {
         setError(err.response?.data?.message || 'Failed to load notifications');
@@ -47,7 +94,7 @@ const Notifications = () => {
     };
 
     fetchNotifications();
-  }, []);
+  }, [profile]);
 
   const filteredNotifications = useMemo(() => {
     if (activeTab === 'all') return notifications;

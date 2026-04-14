@@ -13,9 +13,10 @@ const VerifyEmail = () => {
   ];
   const navigate = useNavigate();
   const location = useLocation();
-  const { verifyEmail, resendVerification, isLoading } = useAuth();
+  const { verifyEmail, resendVerification, login, isLoading } = useAuth();
   
   const email = location.state?.email;
+  const password = location.state?.password;
 
   /* auto focus first input on mount */
   useEffect(() => {
@@ -57,7 +58,27 @@ const VerifyEmail = () => {
     if (code.length === 6) {
       const result = await verifyEmail(email, code);
       if (result.success) {
-        navigate('/login', { state: { message: result.message || 'Email verified successfully. You can now log in.' } });
+        if (result.authenticated) {
+          navigate('/dashboard', { replace: true });
+          return;
+        }
+
+        if (password) {
+          const loginResult = await login({ email, password });
+
+          if (loginResult.success) {
+            navigate('/dashboard', { replace: true });
+            return;
+          }
+        }
+
+        navigate('/login', {
+          replace: true,
+          state: {
+            message:
+              result.message || 'Email verified successfully. You can now log in.',
+          },
+        });
       } else {
         setError(result.message);
       }

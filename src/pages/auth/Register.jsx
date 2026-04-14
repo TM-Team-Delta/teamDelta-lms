@@ -98,7 +98,9 @@ const Register = () => {
     const result = await register(payload);
 
     if (result.success) {
-      navigate('/verify-email', { state: { email: formData.email } });
+      navigate('/verify-email', {
+        state: { email: formData.email, password: formData.password },
+      });
     } else {
       setError(result.message);
     }

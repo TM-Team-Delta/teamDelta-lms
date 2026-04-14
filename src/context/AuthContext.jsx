@@ -148,6 +148,28 @@ export const AuthProvider = ({ children }) => {
     setIsLoading(true);
     try {
       const response = await authService.verifyOtp(email, otp);
+
+      if (response?.success) {
+        const authData = response?.data || response;
+        const nextUser = authData?.user || response?.user || null;
+        const accessToken = authData?.accessToken || response?.accessToken;
+        const refreshToken = authData?.refreshToken || response?.refreshToken;
+
+        if (accessToken && refreshToken && nextUser) {
+          localStorage.setItem('accessToken', accessToken);
+          localStorage.setItem('refreshToken', refreshToken);
+          setUser(nextUser);
+          setIsAuthenticated(true);
+          setFallbackAssignmentsScope(nextUser?.id || nextUser?.email || 'guest');
+          await fetchProfile(nextUser);
+
+          return {
+            ...response,
+            authenticated: true,
+          };
+        }
+      }
+
       return response;
     } catch (error) {
       console.error('OTP Verification error:', error);

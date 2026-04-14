@@ -3,8 +3,10 @@ const FilterTabs = ({ activeTab, onTabChange, notifications, tabs }) => {
   const filterTabs = [
     { id: 'all', label: 'All' },
     { id: 'unread', label: 'Unread' },
-    { id: 'mentions', label: 'Mentions' },
-    { id: 'system', label: 'System' },
+    { id: 'assignment', label: 'Deadlines' },
+    { id: 'achievement', label: 'Achievements' },
+    { id: 'course', label: 'Courses' },
+    { id: 'certificate', label: 'Certificates' },
   ];
 
   // Returns the number badge for each tab based on the current notifications data.

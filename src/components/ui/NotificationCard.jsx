@@ -38,7 +38,7 @@ const NotificationCard = ({
       {actionText && (
         <button
           onClick={onAction}
-          className='md:min-w-[130px] mdh-11 inine-flex self-end w-full rounded-full bg-brand-primary px-5 py-2 text-xs font-medium text-white transition hover:opacity-90 sm:w-auto'
+          className='inline-flex min-h-11 self-end w-full items-center justify-center rounded-full bg-brand-primary px-5 py-2 text-xs font-medium text-white transition hover:opacity-90 sm:w-auto md:min-w-[140px]'
         >
           {actionText}
         </button>

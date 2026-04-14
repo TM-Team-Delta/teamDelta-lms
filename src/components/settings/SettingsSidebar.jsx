@@ -1,32 +1,18 @@
 import React, { useMemo, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import {
-  Bell,
   ChevronDown,
   Globe,
   Lock,
   Menu,
   Palette,
-  UserRound,
   X,
 } from 'lucide-react';
 
 const settingGroups = [
   {
-    title: 'Account',
+    title: 'Preferences',
     items: [
-      {
-        id: 'profile',
-        label: 'Profile',
-        icon: UserRound,
-        path: '/dashboard/settings',
-      },
-      {
-        id: 'notifications',
-        label: 'Notifications',
-        icon: Bell,
-        path: '/dashboard/notifications',
-      },
       {
         id: 'appearance',
         label: 'Appearance',
@@ -36,7 +22,7 @@ const settingGroups = [
     ],
   },
   {
-    title: 'Preferences',
+    title: 'Language',
     items: [
       {
         id: 'language',
@@ -59,7 +45,7 @@ const settingGroups = [
   },
 ];
 
-const SettingsSidebar = ({ activeItem = 'profile' }) => {
+const SettingsSidebar = ({ activeItem = 'appearance' }) => {
   const location = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
 
