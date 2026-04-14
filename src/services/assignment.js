@@ -1,4 +1,16 @@
 import axiosInstance from '../config/axios';
+import {
+  createTimedCacheEntry,
+  isCacheEntryFresh,
+  readSessionCache,
+  removeSessionCache,
+  writeSessionCache,
+} from '../utils/sessionCache';
+
+const ASSIGNMENTS_CACHE_KEY = 'trueminds-assignments';
+const ASSIGNMENTS_CACHE_TTL = 3 * 60 * 1000;
+
+let assignmentsCache = null;
 
 const buildSubmissionFormData = (data = {}) => {
   const formData = new FormData();
@@ -10,8 +22,30 @@ const buildSubmissionFormData = (data = {}) => {
 };
 
 export const assignmentService = {
-  getAssignments: async () => {
+  peekAssignments: () => {
+    const entry = assignmentsCache || readSessionCache(ASSIGNMENTS_CACHE_KEY);
+    if (!entry) return null;
+    assignmentsCache = entry;
+    return entry.data;
+  },
+
+  clearCache: () => {
+    assignmentsCache = null;
+    removeSessionCache(ASSIGNMENTS_CACHE_KEY);
+  },
+
+  getAssignments: async ({ force = false } = {}) => {
+    const cachedEntry = assignmentsCache || readSessionCache(ASSIGNMENTS_CACHE_KEY);
+
+    if (!force && isCacheEntryFresh(cachedEntry, ASSIGNMENTS_CACHE_TTL)) {
+      assignmentsCache = cachedEntry;
+      return cachedEntry.data;
+    }
+
     const response = await axiosInstance.get('/api/assignments');
+    const entry = createTimedCacheEntry(response.data);
+    assignmentsCache = entry;
+    writeSessionCache(ASSIGNMENTS_CACHE_KEY, entry);
     return response.data;
   },
 
@@ -31,6 +65,7 @@ export const assignmentService = {
 
   submitAssignmentFromLesson: async (payload) => {
     const response = await axiosInstance.post('/api/assignments/submit', payload);
+    assignmentService.clearCache();
     return response.data;
   },
 
@@ -45,6 +80,7 @@ export const assignmentService = {
       }
     );
 
+    assignmentService.clearCache();
     return response.data;
   },
 
@@ -59,11 +95,13 @@ export const assignmentService = {
       }
     );
 
+    assignmentService.clearCache();
     return response.data;
   },
 
   createAssignment: async (payload) => {
     const response = await axiosInstance.post('/api/assignments/create', payload);
+    assignmentService.clearCache();
     return response.data;
   },
 

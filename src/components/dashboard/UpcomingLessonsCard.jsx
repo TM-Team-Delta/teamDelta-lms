@@ -18,7 +18,7 @@ const UpcomingLessonsCard = ({ upcomingLessons = defaultUpcomingLessons }) => {
               const lessonTime =
                 lesson?.time || lesson?.duration || 'Schedule coming soon';
               const lessonLink = lesson?.courseId
-                ? `/dashboard/courses/${lesson.courseId}`
+                ? `/dashboard/course-detail/${lesson.courseId}`
                 : '/dashboard/courses';
 
               return (

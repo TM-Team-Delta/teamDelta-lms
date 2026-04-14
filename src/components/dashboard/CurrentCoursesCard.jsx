@@ -15,7 +15,7 @@ const CurrentCoursesCard = ({ currentCourses }) => {
     const thumbnail =
       course?.thumbnail || thumbnailImg;
     const courseLink = course?.courseId
-      ? `/dashboard/courses/${course.courseId}`
+      ? `/dashboard/course-detail/${course.courseId}`
       : '/dashboard/courses';
 
     return {

@@ -2,6 +2,17 @@ import { useEffect, useState } from 'react';
 import { ChevronLeft, FileDown, LoaderCircle, Share2 } from 'lucide-react';
 import CertificateSkeleton from '../../components/certificate/CertificateSkeleton';
 import { certificateService } from '../../services/certificate';
+import { coursesService } from '../../services/courses';
+import { normalizeCourseList } from '../../utils/courseApi';
+import { buildClaimedCertificates } from '../../utils/courseProgress';
+import { buildCertificateAsset } from '../../utils/certificateGenerator';
+import {
+  createTimedCacheEntry,
+  readSessionCache,
+  writeSessionCache,
+} from '../../utils/sessionCache';
+
+const CERTIFICATES_VIEW_CACHE_KEY = 'trueminds-certificates-view';
 
 const normalizeCertificates = (payload) => {
   if (Array.isArray(payload)) return payload;
@@ -97,13 +108,35 @@ const downloadBlob = (blob, filename) => {
   URL.revokeObjectURL(objectUrl);
 };
 
+const toBlob = (content, mimeType = 'text/plain') =>
+  new Blob([content], { type: mimeType });
+
+const buildCertificatesView = (apiCertificates = [], detailedEnrolledCourses = []) => {
+  const localCertificates = buildClaimedCertificates(detailedEnrolledCourses);
+  const apiCertificateTitles = new Set(
+    apiCertificates.map((certificate) => getCertificateTitle(certificate))
+  );
+
+  return [
+    ...localCertificates.filter(
+      (certificate) => !apiCertificateTitles.has(getCertificateTitle(certificate))
+    ),
+    ...apiCertificates,
+  ];
+};
+
 function Certificates() {
-  const [certificates, setCertificates] = useState([]);
+  const [certificates, setCertificates] = useState(() => {
+    const cachedView = readSessionCache(CERTIFICATES_VIEW_CACHE_KEY);
+    return cachedView?.data || [];
+  });
   const [selectedCert, setSelectedCert] = useState(null);
   const [previewData, setPreviewData] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewMimeType, setPreviewMimeType] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(
+    () => !readSessionCache(CERTIFICATES_VIEW_CACHE_KEY)
+  );
   const [previewLoading, setPreviewLoading] = useState(false);
   const [downloadId, setDownloadId] = useState(null);
   const [shareId, setShareId] = useState(null);
@@ -113,8 +146,70 @@ function Certificates() {
   useEffect(() => {
     const fetchCertificates = async () => {
       try {
-        const response = await certificateService.getCertificates();
-        setCertificates(normalizeCertificates(response));
+        const cachedCertificatesResponse = certificateService.peekCertificates?.();
+        const cachedEnrolledCoursesResponse = coursesService.peekEnrolledCourses();
+
+        if (cachedCertificatesResponse || cachedEnrolledCoursesResponse) {
+          const cachedEnrolledCourses = normalizeCourseList(
+            cachedEnrolledCoursesResponse || { data: [] }
+          );
+          const cachedDetailedResponses =
+            cachedEnrolledCourses.length > 0
+              ? await coursesService.getDetailedCourses(
+                  cachedEnrolledCourses.map((course) => course.id)
+                )
+              : [];
+          const cachedDetailedCourses =
+            cachedDetailedResponses.length > 0
+              ? cachedDetailedResponses.map((item) =>
+                  normalizeCourseList({ data: [item?.data || item] })[0]
+                )
+              : cachedEnrolledCourses;
+          const cachedApiCertificates = normalizeCertificates(
+            cachedCertificatesResponse || { data: [] }
+          );
+          const cachedView = buildCertificatesView(
+            cachedApiCertificates,
+            cachedDetailedCourses
+          );
+
+          setCertificates(cachedView);
+          setLoading(false);
+          writeSessionCache(
+            CERTIFICATES_VIEW_CACHE_KEY,
+            createTimedCacheEntry(cachedView)
+          );
+        }
+
+        const [certificatesResponse, enrolledCoursesResponse] = await Promise.all([
+          certificateService.getCertificates().catch(() => ({ data: [] })),
+          coursesService.getEnrolledCourses().catch(() => ({ data: [] })),
+        ]);
+
+        const enrolledCourses = normalizeCourseList(enrolledCoursesResponse);
+        const detailedEnrolledResponses =
+          enrolledCourses.length > 0
+            ? await coursesService.getDetailedCourses(
+                enrolledCourses.map((course) => course.id)
+              )
+            : [];
+        const detailedEnrolledCourses =
+          detailedEnrolledResponses.length > 0
+            ? detailedEnrolledResponses.map((item) =>
+                normalizeCourseList({ data: [item?.data || item] })[0]
+              )
+            : enrolledCourses;
+
+        const nextCertificates = buildCertificatesView(
+          normalizeCertificates(certificatesResponse),
+          detailedEnrolledCourses
+        );
+
+        setCertificates(nextCertificates);
+        writeSessionCache(
+          CERTIFICATES_VIEW_CACHE_KEY,
+          createTimedCacheEntry(nextCertificates)
+        );
       } catch (err) {
         setError(
           err.response?.data?.message || 'Failed to load certificate data'
@@ -138,6 +233,26 @@ function Certificates() {
       setActionError('');
 
       try {
+        if (selectedCert?.source === 'local') {
+          const certificateAsset = await buildCertificateAsset({
+            learnerName: selectedCert?.claim?.fullName || 'Learner',
+            courseTitle: getCertificateTitle(selectedCert),
+            startDate: selectedCert?.completedAt,
+            endDate: selectedCert?.issuedAt,
+          });
+
+          if (!isMounted) return;
+
+          setPreviewData(selectedCert);
+          objectUrl = URL.createObjectURL(
+            toBlob(certificateAsset.content, certificateAsset.mimeType)
+          );
+          setPreviewUrl(objectUrl);
+          setPreviewMimeType(certificateAsset.mimeType || 'image/svg+xml');
+          setPreviewLoading(false);
+          return;
+        }
+
         const [previewResponse, viewResponse] = await Promise.all([
           certificateService.getCertificatePreview(selectedCert.id),
           certificateService.viewCertificate(selectedCert.id),
@@ -188,6 +303,21 @@ function Certificates() {
     setDownloadId(certificate.id);
 
     try {
+      if (certificate?.source === 'local') {
+        const certificateAsset = await buildCertificateAsset({
+          learnerName: certificate?.claim?.fullName || 'Learner',
+          courseTitle: getCertificateTitle(certificate),
+          startDate: certificate?.completedAt,
+          endDate: certificate?.issuedAt,
+        });
+
+        downloadBlob(
+          toBlob(certificateAsset.content, certificateAsset.mimeType),
+          certificateAsset.fileName
+        );
+        return;
+      }
+
       const response = await certificateService.downloadCertificate(certificate.id);
       const filename = getFilenameFromHeaders(
         response.headers,
@@ -209,6 +339,16 @@ function Certificates() {
     setShareId(certificateId);
 
     try {
+      const selectedCertificate = certificates.find(
+        (certificate) => certificate.id === certificateId
+      );
+
+      if (selectedCertificate?.source === 'local') {
+        throw new Error(
+          'This certificate is available locally only. Download it first before sharing.'
+        );
+      }
+
       const response = await certificateService.shareCertificate(certificateId);
       const shareUrl = getShareUrl(response);
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Card from '../ui/Card';
 
 const checkIcon = (
@@ -17,18 +17,33 @@ const checkIcon = (
 const defaultTodoList = [];
 
 const TodoList = ({ todoList = defaultTodoList }) => {
-  const [items, setItems] = useState(todoList ?? []);
+  const [completedOverrides, setCompletedOverrides] = useState({});
 
-  useEffect(() => {
-    setItems(todoList ?? []);
-  }, [todoList]);
+  const items = useMemo(
+    () =>
+      (todoList ?? []).map((item, index) => {
+        const itemId = item?.id || `${item?.title || item?.todo || 'todo'}-${index}`;
+
+        return {
+          ...item,
+          id: itemId,
+          completed:
+            typeof completedOverrides[itemId] === 'boolean'
+              ? completedOverrides[itemId]
+              : Boolean(item?.completed),
+        };
+      }),
+    [completedOverrides, todoList]
+  );
 
   const toggleTodo = (index) => {
-    setItems((currentList) =>
-      currentList.map((item, itemIndex) =>
-        itemIndex === index ? { ...item, completed: !item.completed } : item
-      )
-    );
+    const item = items[index];
+    if (!item?.id) return;
+
+    setCompletedOverrides((current) => ({
+      ...current,
+      [item.id]: !item.completed,
+    }));
   };
 
   return (

@@ -1,7 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { LoaderCircle, UploadCloud, X } from 'lucide-react';
+import { ExternalLink, LoaderCircle, UploadCloud, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import AssignmentSkeleton from '../../components/assignment/AssignmentSkeleton';
 import { assignmentService } from '../../services/assignment';
+import { coursesService } from '../../services/courses';
+import { dashboardService } from '../../services/dashboard';
+import { normalizeCourseList } from '../../utils/courseApi';
+import {
+  buildMergedAssignments,
+  getAssignmentStatus,
+  markFallbackAssignmentSubmitted,
+} from '../../utils/assignmentData';
+import { removeSessionCache } from '../../utils/sessionCache';
 
 const emptySummary = {
   total: 0,
@@ -9,45 +19,44 @@ const emptySummary = {
   pending: 0,
 };
 
-const normalizeAssignmentListResponse = (payload) => {
-  const data = payload?.data || payload;
+const buildCachedAssignmentView = () => {
+  const cachedAssignments = assignmentService.peekAssignments();
 
-  const assignments =
-    data?.assignments ||
-    data?.items ||
-    data?.rows ||
-    data?.results ||
-    (Array.isArray(data) ? data : []);
+  if (!cachedAssignments) {
+    return {
+      assignments: [],
+      summary: emptySummary,
+      hasCachedData: false,
+    };
+  }
 
-  const summary = data?.summary || {
-    total: assignments.length,
-    submitted: assignments.filter((assignment) =>
-      ['submitted', 'completed', 'graded'].includes(
-        String(
-          assignment?.status || assignment?.submissionStatus || ''
-        ).toLowerCase()
-      )
-    ).length,
-    pending: assignments.filter((assignment) =>
-      !['submitted', 'completed', 'graded'].includes(
-        String(
-          assignment?.status || assignment?.submissionStatus || ''
-        ).toLowerCase()
-      )
-    ).length,
-  };
+  const cachedEnrolled = coursesService.peekEnrolledCourses();
+  const enrolledCourses = cachedEnrolled ? normalizeCourseList(cachedEnrolled) : [];
+  const detailedCourses =
+    enrolledCourses.length > 0
+      ? enrolledCourses
+          .map((course) => {
+            const cachedDetail = coursesService.peekCourseById(course.id);
+            return cachedDetail
+              ? normalizeCourseList({ data: [cachedDetail?.data || cachedDetail] })[0]
+              : null;
+          })
+          .filter(Boolean)
+      : [];
+
+  const merged = buildMergedAssignments({
+    assignmentsPayload: cachedAssignments,
+    courses: detailedCourses,
+  });
 
   return {
-    assignments: Array.isArray(assignments) ? assignments : [],
-    summary: summary || emptySummary,
+    assignments: merged.assignments,
+    summary: merged.summary || emptySummary,
+    hasCachedData: true,
   };
 };
 
-const normalizeStatus = (assignment) =>
-  String(assignment?.status || assignment?.submissionStatus || 'pending')
-    .replace(/[_-]+/g, ' ')
-    .trim()
-    .toLowerCase();
+const normalizeStatus = getAssignmentStatus;
 
 const formatStatusLabel = (status) =>
   status.replace(/\b\w/g, (char) => char.toUpperCase());
@@ -81,30 +90,59 @@ const getStatusClasses = (status) => {
   }
 
   if (isSubmittable(status)) {
-    return 'bg-yellow-100 text-yellow-600';
+    return 'bg-[#FFF4D6] text-[#8C6B00]';
   }
 
-  return 'bg-gray-200 text-gray-600';
+  return 'bg-[#E8ECF3] text-[#687385]';
 };
 
 const Assignments = () => {
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [selectedAssignment, setSelectedAssignment] = useState(null);
-  const [assignments, setAssignments] = useState([]);
-  const [summary, setSummary] = useState(emptySummary);
-  const [loading, setLoading] = useState(true);
+  const cachedView = buildCachedAssignmentView();
+  const [assignments, setAssignments] = useState(() => cachedView.assignments);
+  const [summary, setSummary] = useState(() => cachedView.summary);
+  const [loading, setLoading] = useState(() => !cachedView.hasCachedData);
   const [error, setError] = useState('');
 
   const fetchAssignments = useCallback(async () => {
     try {
-      setLoading(true);
+      const nextCachedView = buildCachedAssignmentView();
+
+      if (nextCachedView.hasCachedData) {
+        setAssignments(nextCachedView.assignments);
+        setSummary(nextCachedView.summary);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
+
       setError('');
 
-      const response = await assignmentService.getAssignments();
-      const normalized = normalizeAssignmentListResponse(response);
+      const [assignmentResponse, enrolledCoursesResponse] = await Promise.all([
+        assignmentService.getAssignments().catch(() => ({ data: [] })),
+        coursesService.getEnrolledCourses().catch(() => ({ data: [] })),
+      ]);
+      const enrolledCourses = normalizeCourseList(enrolledCoursesResponse);
+      const detailedResponses =
+        enrolledCourses.length > 0
+          ? await coursesService.getDetailedCourses(
+              enrolledCourses.map((course) => course.id)
+            )
+          : [];
+      const detailedCourses =
+        detailedResponses.length > 0
+          ? detailedResponses.map((item) =>
+              normalizeCourseList({ data: [item?.data || item] })[0]
+            )
+          : enrolledCourses;
+      const merged = buildMergedAssignments({
+        assignmentsPayload: assignmentResponse,
+        courses: detailedCourses,
+      });
 
-      setAssignments(normalized.assignments);
-      setSummary(normalized.summary);
+      setAssignments(merged.assignments);
+      setSummary(merged.summary || emptySummary);
     } catch (err) {
       setError(
         err.response?.data?.message || 'Failed to load assignments'
@@ -177,14 +215,14 @@ const Assignments = () => {
               </div>
             ) : (
               <>
-                <div className='hidden md:block bg-white border border-gray-300 overflow-x-auto rounded-lg'>
+                <div className='hidden overflow-x-auto rounded-lg border border-gray-300 bg-white md:block'>
                   <table className='w-full text-sm'>
                     <thead>
-                      <tr className='text-gray-600 border-b'>
-                        <th className='text-left px-6 py-4'>Lesson title</th>
-                        <th className='text-left px-6 py-4'>Status</th>
-                        <th className='text-left px-6 py-4'>Due date</th>
-                        <th className='text-left px-6 py-4'>Assignment</th>
+                      <tr className='border-b text-gray-600'>
+                        <th className='px-6 py-4 text-left'>Lesson title:</th>
+                        <th className='px-6 py-4 text-left'>Status</th>
+                        <th className='px-6 py-4 text-left'>Due date</th>
+                        <th className='px-6 py-4 text-left'>Assignment:</th>
                         <th className='px-6 py-4'></th>
                       </tr>
                     </thead>
@@ -192,7 +230,8 @@ const Assignments = () => {
                     <tbody>
                       {assignments.map((assignment) => {
                         const status = normalizeStatus(assignment);
-                        const canSubmit = isSubmittable(status);
+                        const canSubmit =
+                          assignment?.canSubmit !== false && isSubmittable(status);
 
                         return (
                           <tr
@@ -225,12 +264,20 @@ const Assignments = () => {
                               {canSubmit ? (
                                 <button
                                   onClick={() => openSubmitModal(assignment)}
-                                  className='bg-button-primary hover:bg-[#365246] text-white px-4 py-2 rounded-md text-xs'
+                                  className='rounded-md bg-button-primary px-4 py-2 text-xs text-white hover:bg-[#365246]'
                                 >
                                   {getActionLabel(status)}
                                 </button>
+                              ) : assignment?.lessonLink ? (
+                                <Link
+                                  to={assignment.lessonLink}
+                                  className='inline-flex items-center gap-2 rounded-md border border-gray-300 px-4 py-2 text-xs text-gray-700 transition hover:bg-gray-50'
+                                >
+                                  View in Lesson
+                                  <ExternalLink className='h-3.5 w-3.5' />
+                                </Link>
                               ) : (
-                                <button className='bg-gray-300 text-gray-600 px-4 py-2 rounded-md text-xs cursor-default'>
+                                <button className='cursor-default rounded-md bg-[#E8ECF3] px-4 py-2 text-xs text-[#687385]'>
                                   Assignment Submitted
                                 </button>
                               )}
@@ -242,10 +289,11 @@ const Assignments = () => {
                   </table>
                 </div>
 
-                <div className='md:hidden space-y-4'>
+                <div className='space-y-4 md:hidden'>
                   {assignments.map((assignment) => {
                     const status = normalizeStatus(assignment);
-                    const canSubmit = isSubmittable(status);
+                    const canSubmit =
+                      assignment?.canSubmit !== false && isSubmittable(status);
 
                     return (
                       <div
@@ -260,7 +308,7 @@ const Assignments = () => {
                           {getAssignmentDescription(assignment)}
                         </p>
 
-                        <div className='flex justify-between text-xs text-gray-500 mb-3 gap-3'>
+                        <div className='mb-3 flex justify-between gap-3 text-xs text-gray-500'>
                           <span>{getAssignmentDueDate(assignment)}</span>
                           <span
                             className={`px-2 py-1 rounded-full text-[10px] font-medium ${getStatusClasses(
@@ -278,8 +326,16 @@ const Assignments = () => {
                           >
                             {getActionLabel(status)}
                           </button>
+                        ) : assignment?.lessonLink ? (
+                          <Link
+                            to={assignment.lessonLink}
+                            className='inline-flex w-full items-center justify-center gap-2 rounded-md border border-gray-300 py-2 text-xs text-gray-700'
+                          >
+                            View in Lesson
+                            <ExternalLink className='h-3.5 w-3.5' />
+                          </Link>
                         ) : (
-                          <button className='w-full bg-gray-300 text-gray-600 py-2 rounded-md text-xs'>
+                          <button className='w-full rounded-md bg-[#E8ECF3] py-2 text-xs text-[#687385]'>
                             Assignment Submitted
                           </button>
                         )}
@@ -349,6 +405,11 @@ const Modal = ({ assignment, onClose, onSuccess }) => {
           link,
           file,
         });
+      } else if (assignment?.source === 'fallback') {
+        markFallbackAssignmentSubmitted(getAssignmentId(assignment), {
+          link,
+          file,
+        });
       } else {
         await assignmentService.submitAssignment(getAssignmentId(assignment), {
           link,
@@ -356,6 +417,8 @@ const Modal = ({ assignment, onClose, onSuccess }) => {
         });
       }
 
+      dashboardService.clearDashboardCache?.();
+      removeSessionCache('trueminds-dashboard-view');
       await onSuccess();
       onClose();
     } catch (err) {

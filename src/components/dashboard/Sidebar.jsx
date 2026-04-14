@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import logo from '../../assets/logo.png';
-import sidepic from '../../assets/sidepic.jpg';
 import { NavLink, useNavigate } from 'react-router-dom';
 
 import {
@@ -18,6 +17,7 @@ import {
   PanelLeftOpen,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import UserAvatar from '../common/UserAvatar';
 
 const navItems = [
   {
@@ -86,12 +86,22 @@ const utilityItems = [
 
 const Sidebar = ({ isOpen, onClose }) => {
   const [collapsed, setCollapsed] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const { profile, logout } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogoutClick = async () => {
-    await logout();
-    navigate('/login');
+  const handleLogoutConfirm = async () => {
+    setIsLoggingOut(true);
+
+    try {
+      await logout();
+      setShowLogoutModal(false);
+      onClose?.();
+      navigate('/login');
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
 
   // Auto-collapse sidebar below 1280px and expand on larger screens
@@ -114,8 +124,6 @@ const Sidebar = ({ isOpen, onClose }) => {
     `${profile?.firstName || ''} ${profile?.lastName || ''}`.trim() || 'User';
 
   const displayEmail = profile?.email || 'No email';
-
-  const displayPhoto = profile?.profilePhotoUrl || sidepic;
 
   return (
     <>
@@ -250,7 +258,11 @@ const Sidebar = ({ isOpen, onClose }) => {
                   <button
                     key={item.id}
                     type='button'
-                    onClick={item.name === 'Logout' ? handleLogoutClick : undefined}
+                    onClick={
+                      item.name === 'Logout'
+                        ? () => setShowLogoutModal(true)
+                        : undefined
+                    }
                     title={collapsed ? item.name : ''}
                     className={`flex items-center rounded-lg text-sm text-brand-primary transition hover:bg-brand-muted ${
                       collapsed ? 'justify-center px-2 py-3' : 'gap-3 px-3 py-3'
@@ -278,10 +290,14 @@ const Sidebar = ({ isOpen, onClose }) => {
             >
               {({ isActive }) => (
                 <>
-                  <img
-                    src={displayPhoto}
-                    alt='sidepic'
-                    className='h-11 w-11 min-h-11 min-w-11 rounded-full object-cover flex-shrink-0'
+                  <UserAvatar
+                    src={profile?.profilePhotoUrl}
+                    alt='User profile'
+                    firstName={profile?.firstName}
+                    lastName={profile?.lastName}
+                    name={displayName}
+                    className='h-11 w-11 min-h-11 min-w-11 flex-shrink-0 object-cover'
+                    initialsClassName='text-sm'
                   />
 
                   {!collapsed && (
@@ -304,6 +320,40 @@ const Sidebar = ({ isOpen, onClose }) => {
           </div>
         </div>
       </aside>
+
+      {showLogoutModal && (
+        <div className='fixed inset-0 z-[80] flex items-center justify-center bg-black/50 px-4'>
+          <div className='w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl'>
+            <div className='mb-4'>
+              <h2 className='text-xl font-bold text-text-primary'>
+                Confirm logout
+              </h2>
+              <p className='mt-2 text-sm text-text-secondary'>
+                Are you sure you want to log out of your account?
+              </p>
+            </div>
+
+            <div className='flex justify-end gap-3'>
+              <button
+                type='button'
+                onClick={() => setShowLogoutModal(false)}
+                disabled={isLoggingOut}
+                className='rounded-lg border border-neutral px-4 py-2 text-sm font-medium text-text-primary transition hover:bg-brand-muted disabled:cursor-not-allowed disabled:opacity-50'
+              >
+                Cancel
+              </button>
+              <button
+                type='button'
+                onClick={handleLogoutConfirm}
+                disabled={isLoggingOut}
+                className='rounded-lg bg-brand-primary px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50'
+              >
+                {isLoggingOut ? 'Logging out...' : 'Logout'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

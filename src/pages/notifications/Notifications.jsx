@@ -9,16 +9,31 @@ import { notificationsService } from '../../services/notifications';
 
 const Notifications = () => {
   const [activeTab, setActiveTab] = useState('all');
-  const [notifications, setNotifications] = useState([]);
-  const [summary, setSummary] = useState(null);
-  const [tabs, setTabs] = useState(null);
-  const [pagination, setPagination] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const cachedNotifications = notificationsService.peekNotifications();
+  const [notifications, setNotifications] = useState(
+    () => cachedNotifications?.data?.notifications || []
+  );
+  const [summary, setSummary] = useState(() => cachedNotifications?.data?.summary || null);
+  const [tabs, setTabs] = useState(() => cachedNotifications?.data?.tabs || null);
+  const [pagination, setPagination] = useState(
+    () => cachedNotifications?.data?.pagination || null
+  );
+  const [isLoading, setIsLoading] = useState(() => !cachedNotifications);
   const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchNotifications = async () => {
       try {
+        const cached = notificationsService.peekNotifications();
+
+        if (cached?.data) {
+          setNotifications(cached.data.notifications || []);
+          setSummary(cached.data.summary || null);
+          setTabs(cached.data.tabs || null);
+          setPagination(cached.data.pagination || null);
+          setIsLoading(false);
+        }
+
         const response = await notificationsService.getNotifications();
         setNotifications(response.data?.notifications || []);
         setSummary(response.data?.summary || null);

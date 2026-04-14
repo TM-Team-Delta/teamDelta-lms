@@ -3,8 +3,14 @@ import { CheckSquare, Download, Menu, PlayCircle, X } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import CourseLessonBreadcrumbs from '../../components/courses/CourseLessonBreadcrumbs';
 import CourseLearningSidebar from '../../components/courses/CourseLearningSidebar';
+import CoursePageSkeleton from '../../components/courses/CoursePageSkeleton';
 import useCourseProgress from '../../hooks/useCourseProgress';
-import { courses } from '../../data/courseData';
+import { coursesService } from '../../services/courses';
+import {
+  extractApiData,
+  normalizeCourse,
+  normalizeLessonDetail,
+} from '../../utils/courseApi';
 
 const tabs = [
   { id: 'documents', label: 'Document' },
@@ -38,6 +44,28 @@ const getYoutubeEmbedUrl = (url) => {
   }
 };
 
+const getExternalVideoUrl = (url) => {
+  if (!url) return '';
+
+  try {
+    const parsedUrl = new URL(url);
+    const videoId = parsedUrl.searchParams.get('v');
+
+    if (videoId) {
+      return `https://www.youtube.com/watch?v=${videoId}`;
+    }
+
+    if (parsedUrl.hostname.includes('youtu.be')) {
+      const shortVideoId = parsedUrl.pathname.replace('/', '');
+      return shortVideoId ? `https://www.youtube.com/watch?v=${shortVideoId}` : url;
+    }
+
+    return url;
+  } catch {
+    return url;
+  }
+};
+
 const downloadAsset = (asset) => {
   const blob = new Blob([asset.content], {
     type: asset.mimeType || 'text/plain',
@@ -57,12 +85,68 @@ const CourseLessonDetail = () => {
     useParams();
   const [activeTab, setActiveTab] = useState('documents');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const allCourses = courses[0] || [];
-
-  const course = useMemo(
-    () => allCourses.find((item) => item.id === courseId) || null,
-    [allCourses, courseId]
+  const [course, setCourse] = useState(() => {
+    const cached = coursesService.peekCourseById(courseId);
+    return cached ? normalizeCourse(extractApiData(cached)) : null;
+  });
+  const [apiLesson, setApiLesson] = useState(null);
+  const [isLoading, setIsLoading] = useState(
+    () => !coursesService.peekCourseById(courseId)
   );
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const loadLessonPage = async () => {
+      const cachedCourse = coursesService.peekCourseById(courseId);
+      if (cachedCourse) {
+        setCourse(normalizeCourse(extractApiData(cachedCourse)));
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
+      }
+
+      setError('');
+      setApiLesson(null);
+
+      try {
+        const courseResponse = await coursesService.getCourseById(courseId);
+        const normalizedCourse = normalizeCourse(extractApiData(courseResponse));
+        setCourse(normalizedCourse);
+
+        const currentModule =
+          normalizedCourse.courseOutline.find((item) => item.id === moduleId) || null;
+        const currentUnitFromCourse =
+          currentModule?.units?.[Number(itemIndex)] || null;
+        const fallbackLesson =
+          currentUnitFromCourse?.sections?.[Number(sectionIndex)]?.learnItems?.[
+            Number(lessonIndex)
+          ] || null;
+
+        if (currentUnitFromCourse?.id && fallbackLesson) {
+          try {
+            const lessonResponse = await coursesService.getLessonByIndex(
+              courseId,
+              currentUnitFromCourse.id,
+              lessonIndex
+            );
+            setApiLesson(normalizeLessonDetail(lessonResponse, fallbackLesson));
+          } catch (lessonRequestError) {
+            console.error('Failed to load lesson detail endpoint:', lessonRequestError);
+          }
+        }
+      } catch (requestError) {
+        console.error('Failed to load lesson detail:', requestError);
+        setError(
+          requestError.response?.data?.message ||
+            'We could not load this lesson right now.'
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadLessonPage();
+  }, [courseId, itemIndex, lessonIndex, moduleId, sectionIndex]);
 
   const { statusByUnitId, isCourseCompleted, completeUnit, startUnit } =
     useCourseProgress(course);
@@ -90,8 +174,8 @@ const CourseLessonDetail = () => {
     if (!currentSection) return null;
     const parsedIndex = Number(lessonIndex);
     if (Number.isNaN(parsedIndex)) return null;
-    return currentSection.learnItems?.[parsedIndex] || null;
-  }, [currentSection, lessonIndex]);
+    return apiLesson || currentSection.learnItems?.[parsedIndex] || null;
+  }, [apiLesson, currentSection, lessonIndex]);
 
   const unitStatus = currentUnit
     ? statusByUnitId[currentUnit.id] || 'locked'
@@ -103,6 +187,23 @@ const CourseLessonDetail = () => {
       startUnit(currentUnit.id);
     }
   }, [currentUnit, startUnit, unitStatus]);
+
+  if (isLoading) {
+    return <CoursePageSkeleton compact />;
+  }
+
+  if (error) {
+    return (
+      <section className='space-y-6 p-4 pt-0 sm:p-5 sm:pt-0 md:p-6 md:pt-0'>
+        <div className='rounded-2xl bg-white p-8 text-center'>
+          <h1 className='text-2xl font-semibold text-text-primary'>
+            Unable to load lesson
+          </h1>
+          <p className='mt-2 text-sm text-text-secondary'>{error}</p>
+        </div>
+      </section>
+    );
+  }
 
   if (!course || !module || !currentUnit || !currentSection || !currentLesson) {
     return (
@@ -136,6 +237,9 @@ const CourseLessonDetail = () => {
 
   const currentMaterials = currentLesson.materials?.[activeTab] || [];
   const embeddedVideoUrl = getYoutubeEmbedUrl(currentLesson.video?.url);
+  const externalVideoUrl = getExternalVideoUrl(
+    currentLesson.video?.sourceUrl || currentLesson.video?.url
+  );
   const isUnitCompleted = unitStatus === 'completed';
 
   const sidebar = (
@@ -199,6 +303,16 @@ const CourseLessonDetail = () => {
                       {currentLesson.video.provider} -{' '}
                       {currentLesson.video.duration}
                     </p>
+                    {externalVideoUrl ? (
+                      <a
+                        href={externalVideoUrl}
+                        target='_blank'
+                        rel='noreferrer'
+                        className='inline-flex items-center gap-2 rounded-md border border-neutral px-3 py-2 text-xs font-medium text-text-primary transition hover:bg-bg-muted'
+                      >
+                        Open source video in a new tab
+                      </a>
+                    ) : null}
                   </div>
                 </>
               ) : (
@@ -293,29 +407,35 @@ const CourseLessonDetail = () => {
               </div>
 
               <div className='space-y-4'>
-                {currentMaterials.map((resource, index) => (
-                  <div
-                    key={`${resource.title}-${index}`}
-                    className='flex flex-col gap-3 border-b border-text-secondary p-4 sm:flex-row sm:items-center sm:justify-between'
-                  >
-                    <div className='flex items-start gap-2 text-sm text-text-secondary'>
-                      <CheckSquare
-                        size={14}
-                        className='mt-1 shrink-0 text-brand-secondary'
-                      />
-                      <span>{resource.title}</span>
-                    </div>
-
-                    <button
-                      type='button'
-                      onClick={() => downloadAsset(resource)}
-                      className='inline-flex items-center justify-center gap-2 self-start rounded-md bg-brand-primary px-4 py-2 text-xs font-medium text-white transition hover:opacity-90 sm:self-center'
+                {currentMaterials.length > 0 ? (
+                  currentMaterials.map((resource, index) => (
+                    <div
+                      key={`${resource.title}-${index}`}
+                      className='flex flex-col gap-3 border-b border-text-secondary p-4 sm:flex-row sm:items-center sm:justify-between'
                     >
-                      <Download size={14} />
-                      Download
-                    </button>
+                      <div className='flex items-start gap-2 text-sm text-text-secondary'>
+                        <CheckSquare
+                          size={14}
+                          className='mt-1 shrink-0 text-brand-secondary'
+                        />
+                        <span>{resource.title}</span>
+                      </div>
+
+                      <button
+                        type='button'
+                        onClick={() => downloadAsset(resource)}
+                        className='inline-flex items-center justify-center gap-2 self-start rounded-md bg-brand-primary px-4 py-2 text-xs font-medium text-white transition hover:opacity-90 sm:self-center'
+                      >
+                        <Download size={14} />
+                        Download
+                      </button>
+                    </div>
+                  ))
+                ) : (
+                  <div className='rounded-md border border-dashed border-neutral px-4 py-6 text-sm text-text-secondary'>
+                    No {activeTab === 'documents' ? 'documents' : 'assignment files'} were added for this lesson yet.
                   </div>
-                ))}
+                )}
               </div>
             </div>
           </div>

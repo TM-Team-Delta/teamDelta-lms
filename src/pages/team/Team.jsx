@@ -9,7 +9,7 @@ import { useEffect, useState } from 'react';
 import { Sparkles, Users } from 'lucide-react';
 import { teamService } from '../../services/team';
 
-const EmptyTeamState = ({ message }) => {
+const EmptyTeamState = () => {
   return (
     <div className='p-4 sm:p-5 md:p-6 md:pt-0'>
       <Card className='relative overflow-hidden border border-border bg-white shadow-sm'>
@@ -71,13 +71,20 @@ const EmptyTeamState = ({ message }) => {
 };
 
 const Team = () => {
-  const [teamData, setTeamData] = useState(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [teamData, setTeamData] = useState(() => teamService.peekOverview()?.data || null);
+  const [isLoading, setIsLoading] = useState(() => !teamService.peekOverview());
   const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchTeam = async () => {
       try {
+        const cached = teamService.peekOverview();
+
+        if (cached?.data) {
+          setTeamData(cached.data);
+          setIsLoading(false);
+        }
+
         const response = await teamService.getOverview();
         setTeamData(response.data);
       } catch (err) {
@@ -98,7 +105,7 @@ const Team = () => {
     const isUnassignedState = /not assigned to a team/i.test(error);
 
     if (isUnassignedState) {
-      return <EmptyTeamState message={error} />;
+      return <EmptyTeamState />;
     }
 
     return (

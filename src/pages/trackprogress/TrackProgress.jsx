@@ -1,107 +1,157 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from 'react';
+import { BookOpen, Clock, MoreHorizontal } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import TrackProgressSkeleton from '../../components/trackprogress/TrackProgressSkeleton';
+import { coursesService } from '../../services/courses';
+import { normalizeCourseList } from '../../utils/courseApi';
+import { buildCourseProgressSnapshot } from '../../utils/courseProgress';
 import {
-  BookOpen,
-  Clock,
-  MoreHorizontal,
-} from "lucide-react";
-import { trackProgressService } from "../../services/trackProgressService";
-import TrackProgressSkeleton from "../../components/trackprogress/TrackProgressSkeleton";
+  createTimedCacheEntry,
+  readSessionCache,
+  writeSessionCache,
+} from '../../utils/sessionCache';
+
+const TRACK_PROGRESS_CACHE_KEY = 'trueminds-track-progress-view';
+
+const buildTrackProgressView = (courses = []) => {
+  const snapshot = buildCourseProgressSnapshot(courses);
+
+  return {
+    overview: {
+      totalCompleted: snapshot.overallProgress,
+      totalCourses: snapshot.snapshots.length,
+    },
+    courses: snapshot.snapshots.map((item) => ({
+      id: item.course.id,
+      title: item.course.title,
+      progress: item.progress.progressPercent,
+      courseLink: `/dashboard/course-detail/${item.course.id}`,
+    })),
+  };
+};
 
 const TrackProgress = () => {
-  const [overview, setOverview] = useState(null);
-  const [courses, setCourses] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cachedView = readSessionCache(TRACK_PROGRESS_CACHE_KEY)?.data;
+  const [overview, setOverview] = useState(cachedView?.overview || null);
+  const [courses, setCourses] = useState(cachedView?.courses || []);
+  const [loading, setLoading] = useState(() => !cachedView);
   const [error, setError] = useState(null);
 
- useEffect(() => {
-  const fetchProgress = async () => {
-    try {
-      setLoading(true);
+  useEffect(() => {
+    const fetchProgress = async () => {
+      try {
+        const cached = coursesService.peekEnrolledCourses();
 
-      const data = await trackProgressService.getProgressOverview();
+        if (cached) {
+          const cachedCourses = normalizeCourseList(cached);
+          const cachedViewData = buildTrackProgressView(cachedCourses);
 
-      const courses = data?.courses || [];
-      const overallProgress = data?.overallProgress || 0;
+          setOverview(cachedViewData.overview);
+          setCourses(cachedViewData.courses);
+          setLoading(false);
+          writeSessionCache(
+            TRACK_PROGRESS_CACHE_KEY,
+            createTimedCacheEntry(cachedViewData)
+          );
+        } else {
+          setLoading(true);
+        }
 
-      setOverview({
-        totalCompleted: overallProgress,
-        totalCourses: courses.length,
-      });
+        const response = await coursesService.getEnrolledCourses();
+        const enrolledCourses = normalizeCourseList(response);
+        const detailedEnrolledResponses =
+          enrolledCourses.length > 0
+            ? await coursesService.getDetailedCourses(
+                enrolledCourses.map((course) => course.id)
+              )
+            : [];
+        const detailedEnrolledCourses =
+          detailedEnrolledResponses.length > 0
+            ? detailedEnrolledResponses.map((item) =>
+                normalizeCourseList({ data: [item?.data || item] })[0]
+              )
+            : enrolledCourses;
+        const nextViewData = buildTrackProgressView(detailedEnrolledCourses);
 
-      setCourses(courses);
-    } catch (err) {
-      console.error(err);
-      setError(err.response?.data?.message || "Failed to load progress");
-    } finally {
-      setLoading(false);
-    }
-  };
+        setOverview(nextViewData.overview);
+        setCourses(nextViewData.courses);
+        writeSessionCache(
+          TRACK_PROGRESS_CACHE_KEY,
+          createTimedCacheEntry(nextViewData)
+        );
+      } catch (err) {
+        console.error(err);
+        setError(err.response?.data?.message || 'Failed to load progress');
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  fetchProgress();
-}, []);
+    fetchProgress();
+  }, []);
 
-  if (error) return <p className="p-4 text-red-500">{error}</p>;
+  if (error) return <p className='p-4 text-red-500'>{error}</p>;
 
   return (
-    <section className="min-h-[calc(100vh-92px)] p-4 sm:p-5 md:p-6">
-      <h2 className="text-xl font-semibold mb-4">Progress Tracking</h2>
+    <section className='min-h-[calc(100vh-92px)] p-4 sm:p-5 md:p-6'>
+      <h2 className='mb-4 text-xl font-semibold'>Progress Tracking</h2>
 
       {loading && <TrackProgressSkeleton />}
 
       {!loading && (
         <>
-          {/* OVERVIEW CARD */}
-          <div className="bg-brand-primary text-white p-6 rounded-2xl mb-8 flex justify-between items-center">
+          <div className='mb-8 flex items-center justify-between rounded-2xl bg-brand-primary p-6 text-white'>
             <div>
-              <h3 className="text-lg font-semibold">Overall Progress</h3>
-              <p className="text-sm opacity-80">
-                You have completed {overview?.totalCompleted ?? 0}% of your courses
+              <h3 className='text-lg font-semibold'>Overall Progress</h3>
+              <p className='text-sm opacity-80'>
+                You have completed {overview?.totalCompleted ?? 0}% of your active
+                courses
               </p>
             </div>
           </div>
 
-          {/* COURSES */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-5">
+          <div className='grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3'>
             {courses.map((course, i) => (
-              <div key={i} className="bg-white rounded-2xl border overflow-hidden">
-                {/* TOP */}
-                <div className="bg-gray-100 h-28 flex items-center justify-center relative">
+              <div key={course.id || i} className='overflow-hidden rounded-2xl border bg-white'>
+                <div className='relative flex h-28 items-center justify-center bg-gray-100'>
                   <MoreHorizontal
-                    className="absolute top-3 right-3 text-gray-400"
+                    className='absolute right-3 top-3 text-gray-400'
                     size={16}
                   />
-                  <BookOpen className="text-gray-400" />
+                  <BookOpen className='text-gray-400' />
                 </div>
 
-                {/* CONTENT */}
-                <div className="p-4">
-                  <div className="flex justify-between mb-2">
-                    <h4 className="text-sm font-semibold">{course.title}</h4>
-                    <span className="text-xs px-2 py-1 rounded-full bg-gray-200">
-                      {course.progress < 100 ? "In Progress" : "Completed"}
+                <div className='p-4'>
+                  <div className='mb-2 flex justify-between'>
+                    <h4 className='text-sm font-semibold'>{course.title}</h4>
+                    <span className='rounded-full bg-gray-200 px-2 py-1 text-xs'>
+                      {course.progress < 100 ? 'In Progress' : 'Completed'}
                     </span>
                   </div>
 
-                  <div className="flex justify-between text-xs mb-1">
+                  <div className='mb-1 flex justify-between text-xs'>
                     <span>Progress</span>
                     <span>{course.progress}%</span>
                   </div>
 
-                  <div className="w-full bg-gray-200 h-2 rounded-full mb-3">
+                  <div className='mb-3 h-2 w-full rounded-full bg-gray-200'>
                     <div
-                      className="bg-brand-secondary h-2 rounded-full"
+                      className='h-2 rounded-full bg-brand-secondary'
                       style={{ width: `${course.progress}%` }}
                     />
                   </div>
 
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs flex items-center gap-1">
+                  <div className='flex items-center justify-between'>
+                    <span className='flex items-center gap-1 text-xs'>
                       <Clock size={12} />
-                      Today
+                      Local progress
                     </span>
-                    <button className="bg-brand-primary text-white text-xs px-3 py-1 rounded-full">
-                      {course.progress < 100 ? "Continue" : "View"}
-                    </button>
+                    <Link
+                      to={course.courseLink}
+                      className='rounded-full bg-brand-primary px-3 py-1 text-xs text-white'
+                    >
+                      {course.progress < 100 ? 'Continue' : 'View'}
+                    </Link>
                   </div>
                 </div>
               </div>

@@ -66,7 +66,7 @@ const OverallLearningProgressCard = ({
   const lessonTitle = resume?.lessonTitle || defaultResume.lessonTitle;
   const buttonLabel = resume?.buttonLabel || defaultResume.buttonLabel;
   const resumeLink = resume?.courseId
-    ? `/dashboard/courses/${resume.courseId}`
+    ? `/dashboard/course-detail/${resume.courseId}`
     : '/dashboard/courses';
 
   return (

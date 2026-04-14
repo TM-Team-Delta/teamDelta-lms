@@ -3,8 +3,10 @@ import { CheckSquare, Menu, Play, X } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import CourseUnitBreadcrumbs from '../../components/courses/CourseUnitBreadcrumbs';
 import CourseLearningSidebar from '../../components/courses/CourseLearningSidebar';
+import CoursePageSkeleton from '../../components/courses/CoursePageSkeleton';
 import useCourseProgress from '../../hooks/useCourseProgress';
-import { courses } from '../../data/courseData';
+import { coursesService } from '../../services/courses';
+import { extractApiData, normalizeCourse } from '../../utils/courseApi';
 
 const getLessonLink = (
   courseId,
@@ -18,14 +20,46 @@ const getLessonLink = (
 const CourseUnitDetail = () => {
   const { courseId, moduleId, itemIndex, unitId } = useParams();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const allCourses = courses[0] || [];
-
-  const course = useMemo(
-    () => allCourses.find((item) => item.id === courseId) || null,
-    [allCourses, courseId]
+  const [course, setCourse] = useState(() => {
+    const cached = coursesService.peekCourseById(courseId);
+    return cached ? normalizeCourse(extractApiData(cached)) : null;
+  });
+  const [isLoading, setIsLoading] = useState(
+    () => !coursesService.peekCourseById(courseId)
   );
+  const [error, setError] = useState('');
 
-  const { statusByUnitId, isCourseCompleted, startUnit } = useCourseProgress(course);
+  useEffect(() => {
+    const loadCourse = async () => {
+      const cached = coursesService.peekCourseById(courseId);
+      if (cached) {
+        setCourse(normalizeCourse(extractApiData(cached)));
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
+      }
+
+      setError('');
+
+      try {
+        const response = await coursesService.getCourseById(courseId);
+        setCourse(normalizeCourse(extractApiData(response)));
+      } catch (requestError) {
+        console.error('Failed to load course unit detail:', requestError);
+        setError(
+          requestError.response?.data?.message ||
+            'We could not load this course unit right now.'
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadCourse();
+  }, [courseId]);
+
+  const { statusByUnitId, isCourseCompleted, startUnit } =
+    useCourseProgress(course);
 
   const module = useMemo(() => {
     if (!course) return null;
@@ -54,7 +88,9 @@ const CourseUnitDetail = () => {
     return module.units?.[currentUnitIndex] || null;
   }, [currentUnitIndex, module]);
 
-  const unitStatus = currentUnit ? statusByUnitId[currentUnit.id] || 'locked' : 'locked';
+  const unitStatus = currentUnit
+    ? statusByUnitId[currentUnit.id] || 'locked'
+    : 'locked';
 
   useEffect(() => {
     if (!currentUnit) return;
@@ -62,6 +98,23 @@ const CourseUnitDetail = () => {
       startUnit(currentUnit.id);
     }
   }, [currentUnit, startUnit, unitStatus]);
+
+  if (isLoading) {
+    return <CoursePageSkeleton compact />;
+  }
+
+  if (error) {
+    return (
+      <section className='space-y-6 p-4 pt-0 sm:p-5 sm:pt-0 md:p-6 md:pt-0'>
+        <div className='rounded-2xl bg-white p-8 text-center'>
+          <h1 className='text-2xl font-semibold text-text-primary'>
+            Unable to load unit
+          </h1>
+          <p className='mt-2 text-sm text-text-secondary'>{error}</p>
+        </div>
+      </section>
+    );
+  }
 
   if (!course || !module || !currentUnit) {
     return (
@@ -113,9 +166,7 @@ const CourseUnitDetail = () => {
       </div>
 
       <div className='grid items-start gap-0 md:-mx-5 md:flex-1 md:min-h-0 md:grid-cols-[260px_minmax(0,1fr)] lg:-mx-6 lg:grid-cols-[280px_minmax(0,1fr)]'>
-        <aside className='hidden h-full md:block'>
-          {sidebar}
-        </aside>
+        <aside className='hidden h-full md:block'>{sidebar}</aside>
 
         <div className='min-w-0 space-y-5 bg-white p-4 pb-12 md:h-full md:min-h-0 md:overflow-y-auto md:p-6 md:pb-20'>
           <CourseUnitBreadcrumbs

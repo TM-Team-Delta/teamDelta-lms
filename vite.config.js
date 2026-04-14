@@ -7,10 +7,11 @@ export default defineConfig({
   plugins: [tailwindcss(), react()],
   server: {
     proxy: {
-        '/api': {
-          target: 'https://talent-flow-lms-api.onrender.com',
-          changeOrigin: true,
-        }
-      }
-  }
+      '/api': {
+        target: 'https://talent-flow-lms-api.onrender.com',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
+  },
 });

@@ -8,7 +8,7 @@ const ResumeCard = ({ resume }) => {
   const buttonLabel = resume?.buttonLabel || 'Resume';
 
   const resumeLink = resume?.courseId
-    ? `/dashboard/courses/${resume.courseId}`
+    ? `/dashboard/course-detail/${resume.courseId}`
     : '/dashboard/courses';
 
   return (

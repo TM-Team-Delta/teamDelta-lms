@@ -1,13 +1,51 @@
 import axiosInstance from '../config/axios';
+import {
+  createTimedCacheEntry,
+  isCacheEntryFresh,
+  readSessionCache,
+  removeSessionCache,
+  writeSessionCache,
+} from '../utils/sessionCache';
+
+const CERTIFICATES_CACHE_KEY = 'trueminds-certificates';
+const CERTIFICATES_CACHE_TTL = 5 * 60 * 1000;
+
+let certificatesCache = null;
 
 export const certificateService = {
-  getCertificates: async () => {
+  peekCertificates: () => {
+    const entry = certificatesCache || readSessionCache(CERTIFICATES_CACHE_KEY);
+    if (!entry) return null;
+    certificatesCache = entry;
+    return entry.data;
+  },
+
+  clearCertificatesCache: () => {
+    certificatesCache = null;
+    removeSessionCache(CERTIFICATES_CACHE_KEY);
+  },
+
+  getCertificates: async ({ force = false } = {}) => {
+    const cachedEntry =
+      certificatesCache || readSessionCache(CERTIFICATES_CACHE_KEY);
+
+    if (!force && isCacheEntryFresh(cachedEntry, CERTIFICATES_CACHE_TTL)) {
+      certificatesCache = cachedEntry;
+      return cachedEntry.data;
+    }
+
     const response = await axiosInstance.get('/api/certifications');
+    const entry = createTimedCacheEntry(response.data);
+
+    certificatesCache = entry;
+    writeSessionCache(CERTIFICATES_CACHE_KEY, entry);
+
     return response.data;
   },
 
   createCertificate: async (payload) => {
     const response = await axiosInstance.post('/api/certifications', payload);
+    certificateService.clearCertificatesCache();
     return response.data;
   },
 
@@ -18,6 +56,7 @@ export const certificateService = {
 
   deleteCertificate: async (id) => {
     const response = await axiosInstance.delete(`/api/certifications/${id}`);
+    certificateService.clearCertificatesCache();
     return response.data;
   },
 

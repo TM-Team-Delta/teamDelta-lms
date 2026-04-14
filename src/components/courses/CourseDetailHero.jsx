@@ -26,8 +26,18 @@ const getCourseCtaLink = (course) => {
   return `/dashboard/course-detail/${course.id}/modules/${nextUnit.moduleId}/items/${nextUnit.unitIndex}`;
 };
 
-const CourseDetailHero = ({ course }) => {
-  const ctaLink = getCourseCtaLink(course);
+const CourseDetailHero = ({
+  course,
+  ctaLink: ctaLinkOverride,
+  onPrimaryAction,
+  primaryActionDisabled = false,
+  isPrimaryActionLoading = false,
+}) => {
+  const ctaLink = ctaLinkOverride || getCourseCtaLink(course);
+  const isEnrolled = Boolean(course?.enrollment?.isEnrolled);
+  const actionLabel = isPrimaryActionLoading
+    ? 'Please wait...'
+    : course.enrollment.ctaLabel;
 
   return (
     <section className='rounded-2xl bg-brand-primary p-5 text-white sm:p-6'>
@@ -57,12 +67,23 @@ const CourseDetailHero = ({ course }) => {
             </div>
           </div>
 
-          <Link
-            to={ctaLink}
-            className='inline-flex rounded-lg bg-button-secondary px-5 py-3 text-sm font-medium text-brand-primary transition hover:opacity-90'
-          >
-            {course.enrollment.ctaLabel}
-          </Link>
+          {isEnrolled ? (
+            <Link
+              to={ctaLink}
+              className='inline-flex rounded-lg bg-button-secondary px-5 py-3 text-sm font-medium text-brand-primary transition hover:opacity-90'
+            >
+              {actionLabel}
+            </Link>
+          ) : (
+            <button
+              type='button'
+              onClick={onPrimaryAction}
+              disabled={primaryActionDisabled || isPrimaryActionLoading}
+              className='inline-flex rounded-lg bg-button-secondary px-5 py-3 text-sm font-medium text-brand-primary transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60'
+            >
+              {actionLabel}
+            </button>
+          )}
         </div>
 
         <div className='overflow-hidden rounded-2xl bg-white/10 p-2 md:w-[260px]'>

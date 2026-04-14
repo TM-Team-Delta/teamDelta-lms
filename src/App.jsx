@@ -20,6 +20,7 @@ import UserLayout from './layouts/UserLayout';
 import AuthLayout from './layouts/AuthLayout';
 import DashboardLayout from './layouts/DashboardLayout';
 import AdminLayout from './layouts/AdminLayout';
+import ProtectedRoute from './routes/ProtectedRoute';
 
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
@@ -54,7 +55,13 @@ const App = () => {
       </Route>
 
       {/* USER DASHBOARD (PROTECTED) */}
-      <Route element={<DashboardLayout />}>
+      <Route
+        element={
+          <ProtectedRoute>
+            <DashboardLayout />
+          </ProtectedRoute>
+        }
+      >
         <Route path='dashboard' element={<Dashboard />} />
         <Route path='/dashboard/courses' element={<CourseCatalog />} />
         <Route path='/dashboard/team' element={<Team />} />

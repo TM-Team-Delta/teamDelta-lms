@@ -28,9 +28,26 @@ axiosInstance.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    const authExcludedRoutes = [
+      '/api/auth/login',
+      '/api/auth/register',
+      '/api/auth/verify-otp',
+      '/api/auth/resend-otp',
+      '/api/auth/forgot-password',
+      '/api/auth/reset-password',
+      '/api/auth/google/callback',
+      '/api/auth/refresh-token',
+    ];
+    const shouldSkipRefresh = authExcludedRoutes.some((route) =>
+      originalRequest?.url?.includes(route)
+    );
 
     // Avoid infinite loop if refresh token itself fails
-    if (error.response?.status === 401 && !originalRequest._retry && originalRequest.url !== '/api/auth/refresh-token') {
+    if (
+      error.response?.status === 401 &&
+      !originalRequest?._retry &&
+      !shouldSkipRefresh
+    ) {
       originalRequest._retry = true;
 
       try {

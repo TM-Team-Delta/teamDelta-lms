@@ -1,20 +1,23 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Award,
   ChevronLeft,
-  Download,
   Menu,
   PartyPopper,
   X,
 } from 'lucide-react';
 import { useParams } from 'react-router-dom';
 import CourseLearningSidebar from '../../components/courses/CourseLearningSidebar';
+import CoursePageSkeleton from '../../components/courses/CoursePageSkeleton';
 import useCourseProgress from '../../hooks/useCourseProgress';
-import { courses } from '../../data/courseData';
+import { coursesService } from '../../services/courses';
+import { extractApiData, normalizeCourse } from '../../utils/courseApi';
 import { buildCertificateAsset } from '../../utils/certificateGenerator';
 
 const downloadAsset = (asset) => {
-  const blob = new Blob([asset.content], { type: asset.mimeType || 'text/plain' });
+  const blob = new Blob([asset.content], {
+    type: asset.mimeType || 'text/plain',
+  });
   const objectUrl = window.URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = objectUrl;
@@ -30,18 +33,49 @@ const CourseCertificate = () => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isSuccessOpen, setIsSuccessOpen] = useState(false);
+  const [course, setCourse] = useState(() => {
+    const cached = coursesService.peekCourseById(courseId);
+    return cached ? normalizeCourse(extractApiData(cached)) : null;
+  });
+  const [isLoading, setIsLoading] = useState(
+    () => !coursesService.peekCourseById(courseId)
+  );
+  const [error, setError] = useState('');
   const [formValues, setFormValues] = useState({
     fullName: '',
     email: '',
     internshipId: '',
     confirmed: false,
   });
-  const allCourses = courses[0] || [];
 
-  const course = useMemo(
-    () => allCourses.find((item) => item.id === courseId) || null,
-    [allCourses, courseId]
-  );
+  useEffect(() => {
+    const loadCourse = async () => {
+      const cached = coursesService.peekCourseById(courseId);
+      if (cached) {
+        setCourse(normalizeCourse(extractApiData(cached)));
+        setIsLoading(false);
+      } else {
+        setIsLoading(true);
+      }
+
+      setError('');
+
+      try {
+        const response = await coursesService.getCourseById(courseId);
+        setCourse(normalizeCourse(extractApiData(response)));
+      } catch (requestError) {
+        console.error('Failed to load course certificate page:', requestError);
+        setError(
+          requestError.response?.data?.message ||
+            'We could not load this certificate page right now.'
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadCourse();
+  }, [courseId]);
 
   const {
     statusByUnitId,
@@ -51,6 +85,62 @@ const CourseCertificate = () => {
     courseEndDate,
     claimCertificate,
   } = useCourseProgress(course);
+
+  const handleInputChange = (fieldId, value) => {
+    setFormValues((current) => ({
+      ...current,
+      [fieldId]: value,
+    }));
+  };
+
+  useEffect(() => {
+    if (!certificateClaim) return;
+
+    setFormValues((current) => ({
+      ...current,
+      fullName: certificateClaim.fullName || current.fullName,
+      email: certificateClaim.email || current.email,
+      internshipId: certificateClaim.internshipId || current.internshipId,
+      confirmed: true,
+    }));
+  }, [certificateClaim]);
+
+  const submitDisabled =
+    !formValues.fullName ||
+    !formValues.email ||
+    !formValues.internshipId ||
+    !formValues.confirmed;
+  const hasClaimedCertificate = Boolean(certificateClaim);
+
+  const handleDownloadCertificate = async () => {
+    if (!course || !hasClaimedCertificate) return;
+
+    const certificateAsset = await buildCertificateAsset({
+      learnerName: certificateClaim.fullName,
+      courseTitle: course.title,
+      startDate: courseStartDate,
+      endDate: courseEndDate || certificateClaim.claimedAt,
+    });
+
+    downloadAsset(certificateAsset);
+  };
+
+  if (isLoading) {
+    return <CoursePageSkeleton compact />;
+  }
+
+  if (error) {
+    return (
+      <section className='space-y-6 p-4 pt-0 sm:p-5 sm:pt-0 md:p-6 md:pt-0'>
+        <div className='rounded-2xl bg-white p-8 text-center'>
+          <h1 className='text-2xl font-semibold text-text-primary'>
+            Unable to load certificate page
+          </h1>
+          <p className='mt-2 text-sm text-text-secondary'>{error}</p>
+        </div>
+      </section>
+    );
+  }
 
   if (!course) {
     return (
@@ -85,45 +175,6 @@ const CourseCertificate = () => {
       isCertificatePage
     />
   );
-
-  const handleInputChange = (fieldId, value) => {
-    setFormValues((current) => ({
-      ...current,
-      [fieldId]: value,
-    }));
-  };
-
-  const submitDisabled =
-    !formValues.fullName ||
-    !formValues.email ||
-    !formValues.internshipId ||
-    !formValues.confirmed;
-  const hasClaimedCertificate = Boolean(certificateClaim);
-
-  useEffect(() => {
-    if (!certificateClaim) return;
-
-    setFormValues((current) => ({
-      ...current,
-      fullName: certificateClaim.fullName || current.fullName,
-      email: certificateClaim.email || current.email,
-      internshipId: certificateClaim.internshipId || current.internshipId,
-      confirmed: true,
-    }));
-  }, [certificateClaim]);
-
-  const handleDownloadCertificate = async () => {
-    if (!hasClaimedCertificate) return;
-
-    const certificateAsset = await buildCertificateAsset({
-      learnerName: certificateClaim.fullName,
-      courseTitle: course.title,
-      startDate: courseStartDate,
-      endDate: courseEndDate || certificateClaim.claimedAt,
-    });
-
-    downloadAsset(certificateAsset);
-  };
 
   return (
     <section className='space-y-5 overflow-x-hidden py-4 md:p-5 md:pt-0'>

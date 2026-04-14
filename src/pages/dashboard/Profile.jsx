@@ -1,7 +1,15 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { assignmentService } from '../../services/assignment';
+import { coursesService } from '../../services/courses';
 import { usersService } from '../../services/users';
 import { useAuth } from '../../context/AuthContext';
-import sidepic from '../../assets/sidepic.jpg';
+import { buildMergedAssignments } from '../../utils/assignmentData';
+import { normalizeCourseList } from '../../utils/courseApi';
+import { buildCourseProgressSnapshot } from '../../utils/courseProgress';
+import {
+  resolveProfilePhotoScope,
+  setStoredProfilePhoto,
+} from '../../utils/profilePhotoStorage';
 import {
   Edit3,
   Mail,
@@ -15,72 +23,75 @@ import {
   Camera,
   X,
 } from 'lucide-react';
+import UserAvatar from '../../components/common/UserAvatar';
 
-const BadgeModal = ({ isOpen, onClose }) => {
+const defaultBadgeCatalog = [
+  {
+    name: 'Top Learner',
+    description: 'Earned the highest engagement score this week',
+    icon: '🏆',
+    color: 'bg-yellow-100 text-yellow-600',
+  },
+  {
+    name: 'Pixel Perfect',
+    description: 'Submitted first milestone assignment',
+    icon: '🎯',
+    color: 'bg-red-100 text-red-600',
+  },
+  {
+    name: 'Fast Starter',
+    description: 'Completed platform onboarding in under 24 hours',
+    icon: '🚀',
+    color: 'bg-blue-100 text-blue-600',
+  },
+  {
+    name: 'Design Thinker',
+    description: 'Completed the user research module',
+    icon: '🧠',
+    color: 'bg-pink-100 text-pink-600',
+  },
+  {
+    name: '7-Day Streak',
+    description: 'Logged in for 7 consecutive days',
+    icon: '🔥',
+    color: 'bg-orange-100 text-orange-600',
+  },
+  {
+    name: 'System Architect',
+    description: 'Passed the component library quiz',
+    icon: '🧩',
+    color: 'bg-green-100 text-green-600',
+  },
+  {
+    name: 'Accessibility Pro',
+    description: 'Scored 100% on inclusive design standards',
+    icon: '⭐',
+    color: 'bg-yellow-100 text-yellow-600',
+  },
+  {
+    name: 'Problem Solver',
+    description: 'Answered a question in the help channel',
+    icon: '💡',
+    color: 'bg-yellow-50 text-yellow-500',
+  },
+  {
+    name: 'Global Collab',
+    description: 'Active in 3+ cross-disciplinary team channels',
+    icon: '🌐',
+    color: 'bg-blue-50 text-blue-500',
+  },
+  {
+    name: 'Peer Reviewer',
+    description: "Left constructive feedback on a teammate's project",
+    icon: '📝',
+    color: 'bg-gray-100 text-gray-600',
+  },
+];
+
+const BadgeModal = ({ isOpen, onClose, badgesCatalog }) => {
   if (!isOpen) return null;
 
-  const badgesData = [
-    {
-      name: 'Top Learner',
-      description: 'Earned the highest engagement score this week',
-      icon: '🏆',
-      color: 'bg-yellow-100 text-yellow-600',
-    },
-    {
-      name: 'Pixel Perfect',
-      description: 'Submitted first milestone assignment',
-      icon: '🎯',
-      color: 'bg-red-100 text-red-600',
-    },
-    {
-      name: 'Fast Starter',
-      description: 'Completed platform onboarding in under 24 hours',
-      icon: '🚀',
-      color: 'bg-blue-100 text-blue-600',
-    },
-    {
-      name: 'Design Thinker',
-      description: 'Completed the user research module',
-      icon: '🧠',
-      color: 'bg-pink-100 text-pink-600',
-    },
-    {
-      name: '7-Day Streak',
-      description: 'Logged in for 7 consecutive days',
-      icon: '🔥',
-      color: 'bg-orange-100 text-orange-600',
-    },
-    {
-      name: 'System Architect',
-      description: 'Passed the component library quiz',
-      icon: '🧩',
-      color: 'bg-green-100 text-green-600',
-    },
-    {
-      name: 'Accessibility Pro',
-      description: 'Scored 100% on inclusive design standards',
-      icon: '⭐',
-      color: 'bg-yellow-100 text-yellow-600',
-    },
-    {
-      name: 'Problem Solver',
-      description: 'Answered a question in the help channel',
-      icon: '💡',
-      color: 'bg-yellow-50 text-yellow-500',
-    },
-    {
-      name: 'Global Collab',
-      description: 'Active in 3+ cross-disciplinary team channels',
-      icon: '🌐',
-      color: 'bg-blue-50 text-blue-500',
-    },
-    {
-      name: 'Peer Reviewer',
-      description: "Left constructive feedback on a teammate's project",
-      icon: '📝',
-      color: 'bg-gray-100 text-gray-600',
-    },
-  ];
+  const badgesData = badgesCatalog;
 
   return (
     <div className='fixed inset-0 z-[100] flex items-center justify-center p-4 md:p-6'>
@@ -131,12 +142,108 @@ const BadgeModal = ({ isOpen, onClose }) => {
   );
 };
 
+const normalizeBadgeItems = (badgeItems) =>
+  badgeItems.map((badge, index) => ({
+    name:
+      badge?.name ||
+      badge?.title ||
+      defaultBadgeCatalog[index % defaultBadgeCatalog.length].name,
+    description:
+      badge?.description ||
+      defaultBadgeCatalog[index % defaultBadgeCatalog.length].description,
+    icon:
+      badge?.icon ||
+      defaultBadgeCatalog[index % defaultBadgeCatalog.length].icon,
+    color:
+      badge?.color ||
+      defaultBadgeCatalog[index % defaultBadgeCatalog.length].color,
+  }));
+
+const deriveEarnedBadges = ({
+  enrolledCourses,
+  progressSnapshot,
+  mergedAssignments,
+  profileData,
+}) => {
+  const totalCourses = enrolledCourses.length;
+  const completedUnits = progressSnapshot.snapshots.reduce(
+    (sum, snapshot) => sum + (snapshot.progress.completedCount || 0),
+    0
+  );
+  const completedCourses = progressSnapshot.snapshots.filter(
+    (snapshot) => snapshot.progress.progressPercent >= 100
+  ).length;
+  const submittedAssignments = mergedAssignments.assignments.filter(
+    (assignment) =>
+      ['submitted', 'completed', 'graded'].includes(
+        String(assignment?.status || assignment?.submissionStatus || '')
+          .replace(/[_-]+/g, ' ')
+          .trim()
+          .toLowerCase()
+      )
+  ).length;
+  const streakDays = Number(
+    profileData?.stats?.streakDays || profileData?.streakDays || 0
+  );
+  const enrolledCategories = enrolledCourses.map((course) =>
+    String(course?.category || '').toLowerCase()
+  );
+
+  const earnedBadgeNames = new Set();
+
+  if (totalCourses > 0) earnedBadgeNames.add('Fast Starter');
+  if (progressSnapshot.overallProgress >= 25 || completedUnits >= 3) {
+    earnedBadgeNames.add('Top Learner');
+  }
+  if (submittedAssignments >= 1) earnedBadgeNames.add('Pixel Perfect');
+  if (enrolledCategories.some((category) => category.includes('design'))) {
+    earnedBadgeNames.add('Design Thinker');
+  }
+  if (streakDays >= 7) earnedBadgeNames.add('7-Day Streak');
+  if (
+    enrolledCategories.some((category) => category.includes('development')) &&
+    completedUnits >= 3
+  ) {
+    earnedBadgeNames.add('System Architect');
+  }
+  if (submittedAssignments >= 3) earnedBadgeNames.add('Accessibility Pro');
+  if (completedUnits >= 5) earnedBadgeNames.add('Problem Solver');
+  if (totalCourses >= 3) earnedBadgeNames.add('Global Collab');
+  if (completedCourses >= 1 || submittedAssignments >= 5) {
+    earnedBadgeNames.add('Peer Reviewer');
+  }
+
+  return defaultBadgeCatalog.filter((badge) => earnedBadgeNames.has(badge.name));
+};
+
+const buildProfileFormData = (profileData) => ({
+  firstName: profileData?.firstName || '',
+  lastName: profileData?.lastName || '',
+  email: profileData?.email || '',
+  location: profileData?.location || '',
+  bio: profileData?.bio || '',
+  profilePhotoUrl: profileData?.profilePhotoUrl || '',
+});
+
 const Profile = () => {
+  const MAX_IMAGE_DIMENSION = 512;
+  const MAX_IMAGE_SIZE_BYTES = 350 * 1024;
   const fileInputRef = useRef(null);
   const { profile, refreshProfile } = useAuth();
   const [isEditing, setIsEditing] = useState(false);
   const [isBadgeModalOpen, setIsBadgeModalOpen] = useState(false);
-  const [profileImage, setProfileImage] = useState(sidepic);
+  const [isAddingSkill, setIsAddingSkill] = useState(false);
+  const [profileImage, setProfileImage] = useState('');
+  const [learningPath, setLearningPath] = useState([]);
+  const [badges, setBadges] = useState([]);
+  const [newSkill, setNewSkill] = useState('');
+  const [skillError, setSkillError] = useState('');
+  const [learningSummary, setLearningSummary] = useState({
+    overallProgress: 0,
+    activeCourses: 0,
+    totalCourses: 0,
+    onTrackPercentage: 0,
+  });
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -150,6 +257,59 @@ const Profile = () => {
   const profileData = profile;
   const isLoading = !profileData;
 
+  const compressImageFile = (file) =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = () => {
+        const img = new Image();
+
+        img.onload = () => {
+          let { width, height } = img;
+
+          if (width > height && width > MAX_IMAGE_DIMENSION) {
+            height = Math.round((height * MAX_IMAGE_DIMENSION) / width);
+            width = MAX_IMAGE_DIMENSION;
+          } else if (height >= width && height > MAX_IMAGE_DIMENSION) {
+            width = Math.round((width * MAX_IMAGE_DIMENSION) / height);
+            height = MAX_IMAGE_DIMENSION;
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+
+          const context = canvas.getContext('2d');
+
+          if (!context) {
+            reject(new Error('Could not process image.'));
+            return;
+          }
+
+          context.drawImage(img, 0, 0, width, height);
+
+          let quality = 0.85;
+          let imageDataUrl = canvas.toDataURL('image/jpeg', quality);
+
+          while (
+            imageDataUrl.length > MAX_IMAGE_SIZE_BYTES &&
+            quality > 0.45
+          ) {
+            quality -= 0.1;
+            imageDataUrl = canvas.toDataURL('image/jpeg', quality);
+          }
+
+          resolve(imageDataUrl);
+        };
+
+        img.onerror = () => reject(new Error('Invalid image file.'));
+        img.src = reader.result;
+      };
+
+      reader.onerror = () => reject(new Error('Failed to read image file.'));
+      reader.readAsDataURL(file);
+    });
+
   const formattedEnrollmentDate = profileData?.enrollmentDate
     ? new Date(profileData.enrollmentDate).toLocaleDateString('en-GB', {
         day: 'numeric',
@@ -159,30 +319,159 @@ const Profile = () => {
     : 'Not available';
 
   useEffect(() => {
-    if (!profileData) return;
+    const fetchLearningPath = async () => {
+      try {
+        const enrolledResponse = await coursesService
+          .getEnrolledCourses()
+          .catch(() => ({ data: [] }));
+        const enrolledCourses = normalizeCourseList(enrolledResponse);
+        const detailedResponses =
+          enrolledCourses.length > 0
+            ? await coursesService.getDetailedCourses(
+                enrolledCourses.map((course) => course.id)
+              )
+            : [];
+        const detailedCourses =
+          detailedResponses.length > 0
+            ? detailedResponses.map((response) =>
+                normalizeCourseList({ data: [response?.data || response] })[0]
+              )
+            : enrolledCourses;
+        const progressSnapshot = buildCourseProgressSnapshot(detailedCourses);
+        const assignmentResponse = await assignmentService
+          .getAssignments()
+          .catch(() => ({ data: [] }));
+        const mergedAssignments = buildMergedAssignments({
+          assignmentsPayload: assignmentResponse,
+          courses: detailedCourses,
+        });
 
-    setFormData({
-      firstName: profileData.firstName || '',
-      lastName: profileData.lastName || '',
-      email: profileData.email || '',
-      location: profileData.location || '',
-      bio: profileData.bio || '',
-      profilePhotoUrl: profileData.profilePhotoUrl || '',
-    });
+        const pathItems = progressSnapshot.snapshots
+          .map((snapshot, index) => {
+            const totalUnits = snapshot.progress.totalUnits || 0;
+            const completedUnits = snapshot.progress.completedCount || 0;
+            const nextUnitTitle =
+              snapshot.nextUnit?.unit?.title || 'Course content';
+            const recentActivity = [
+              snapshot.progress.courseEndDate,
+              snapshot.progress.courseStartDate,
+            ]
+              .filter(Boolean)
+              .map((value) => new Date(value).getTime())
+              .filter((value) => !Number.isNaN(value));
 
-    setProfileImage(profileData.profilePhotoUrl || sidepic);
-  }, [profileData]);
+            return {
+              id: snapshot.course.id || index + 1,
+              title: snapshot.course.title,
+              module: `Completed ${completedUnits} of ${totalUnits} units`,
+              instructor: snapshot.course.mentorName || 'Trueminds Mentor',
+              type:
+                mergedAssignments.assignments.some(
+                  (assignment) =>
+                    assignment.courseId === snapshot.course.id &&
+                    !['submitted', 'completed', 'graded'].includes(
+                      String(
+                        assignment?.status || assignment?.submissionStatus || 'pending'
+                      )
+                        .replace(/[_-]+/g, ' ')
+                        .trim()
+                        .toLowerCase()
+                    )
+                )
+                  ? 'Assignment due'
+                  : nextUnitTitle,
+              progress: snapshot.progress.progressPercent,
+              status:
+                snapshot.progress.progressPercent >= 100
+                  ? 'Completed'
+                  : snapshot.progress.progressPercent > 0
+                    ? 'In Progress'
+                    : 'Not Started',
+              recentActivity:
+                recentActivity.length > 0 ? Math.max(...recentActivity) : 0,
+            };
+          })
+          .sort((first, second) => second.recentActivity - first.recentActivity)
+          .slice(0, 3);
+
+        const activeCourses = progressSnapshot.snapshots.filter(
+          (snapshot) => snapshot.progress.progressPercent > 0
+        ).length;
+        const totalCourses = progressSnapshot.snapshots.length;
+        const onTrackPercentage = totalCourses
+          ? Math.round((activeCourses / totalCourses) * 100)
+          : 0;
+
+        setLearningPath(pathItems);
+        setLearningSummary({
+          overallProgress: progressSnapshot.overallProgress,
+          activeCourses,
+          totalCourses,
+          onTrackPercentage,
+        });
+        setBadges(
+          deriveEarnedBadges({
+            enrolledCourses: detailedCourses,
+            progressSnapshot,
+            mergedAssignments,
+            profileData,
+          })
+        );
+      } catch (learningError) {
+        console.error('Failed to load learning path data:', learningError);
+      }
+    };
+
+    fetchLearningPath();
+  }, []);
+
+  useEffect(() => {
+    const fetchBadges = async () => {
+      try {
+        const response = await usersService.getBadges().catch(() => ({ data: [] }));
+        const badgeItems =
+          response?.data?.badges ||
+          response?.data?.items ||
+          response?.data ||
+          (Array.isArray(response) ? response : []);
+
+        if (Array.isArray(badgeItems) && badgeItems.length > 0) {
+          setBadges(normalizeBadgeItems(badgeItems));
+          return;
+        }
+
+        if ((profileData?.badges || []).length > 0) {
+          setBadges(normalizeBadgeItems(profileData.badges || []));
+          return;
+        }
+
+        setBadges((currentBadges) => currentBadges);
+      } catch (badgeError) {
+        console.error('Failed to load badges:', badgeError);
+      }
+    };
+
+    fetchBadges();
+  }, [profileData?.badges]);
 
   const handleSaveProfile = async () => {
+    setError('');
+
     try {
       const payload = {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
+        fullName:
+          `${formData.firstName} ${formData.lastName}`.trim() || undefined,
         location: formData.location,
         bio: formData.bio,
       };
 
       await usersService.updateProfile(payload);
+      if (formData.profilePhotoUrl) {
+        setStoredProfilePhoto(
+          resolveProfilePhotoScope(profileData || formData),
+          formData.profilePhotoUrl
+        );
+      }
       await refreshProfile();
       setIsEditing(false);
     } catch (err) {
@@ -193,9 +482,49 @@ const Profile = () => {
 
   const handleImageChange = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      const imageUrl = URL.createObjectURL(file);
-      setProfileImage(imageUrl);
+    if (!file) return;
+
+    setError('');
+
+    compressImageFile(file)
+      .then((imageDataUrl) => {
+        if (typeof imageDataUrl === 'string') {
+          setProfileImage(imageDataUrl);
+          setFormData((prev) => ({
+            ...prev,
+            profilePhotoUrl: imageDataUrl,
+          }));
+        }
+      })
+      .catch((imageError) => {
+        setError(imageError.message || 'Failed to process image.');
+      })
+      .finally(() => {
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
+      });
+  };
+
+  const handleAddSkill = async () => {
+    const trimmedSkill = newSkill.trim();
+
+    if (!trimmedSkill) {
+      setSkillError('Enter a skill before saving.');
+      return;
+    }
+
+    try {
+      setSkillError('');
+      await usersService.addSkill({ name: trimmedSkill });
+      await refreshProfile();
+      setNewSkill('');
+      setIsAddingSkill(false);
+    } catch (skillRequestError) {
+      console.error('Failed to add skill:', skillRequestError);
+      setSkillError(
+        skillRequestError.response?.data?.message || 'Failed to add skill'
+      );
     }
   };
 
@@ -218,57 +547,19 @@ const Profile = () => {
     stats: [
       {
         label: 'Courses',
-        value: profileData?.stats?.courses ?? '0',
+        value: learningSummary.totalCourses || profileData?.stats?.courses || '0',
       },
       {
         label: 'Badges',
-        value: profileData?.stats?.badges ?? '0',
+        value: badges.length || profileData?.stats?.badges || '0',
       },
       {
         label: 'On Track',
-        value: `${profileData?.stats?.onTrackPercentage ?? 0}%`,
+        value: `${learningSummary.onTrackPercentage ?? profileData?.stats?.onTrackPercentage ?? 0}%`,
       },
     ],
   };
 
-  const learningPath = [
-    {
-      id: 1,
-      title: 'Foundations of Enterprise UX',
-      module: 'Module 7 of 10',
-      instructor: 'Dr. Okonkwo',
-      type: 'Interactive',
-      progress: 72,
-      status: 'In Progress',
-    },
-    {
-      id: 2,
-      title: 'Cross-Functional Product Teams',
-      module: 'Module 2 of 12',
-      instructor: 'Self-paced',
-      type: 'Online',
-      progress: 18,
-      status: 'In Progress',
-    },
-  ];
-
-  const badgeColors = [
-    'bg-yellow-100',
-    'bg-red-100',
-    'bg-blue-100',
-    'bg-pink-100',
-    'bg-orange-100',
-    'bg-green-100',
-    'bg-yellow-50',
-    'bg-blue-50',
-    'bg-gray-100',
-  ];
-
-  const badges = (profileData?.badges || []).map((badge, index) => ({
-    name: badge?.name || badge?.title || 'Untitled badge',
-    icon: badge?.icon || '🏅',
-    color: badgeColors[index % badgeColors.length],
-  }));
 
   const skillColors = [
     'bg-green-100 text-green-700',
@@ -284,13 +575,14 @@ const Profile = () => {
   }));
 
   const earnedBadgesCount = badges.length;
-  const totalBadgesCount = earnedBadgesCount;
+  const totalBadgesCount = defaultBadgeCatalog.length;
   const remainingBadgesCount = Math.max(
     totalBadgesCount - earnedBadgesCount,
     0
   );
 
   const aboutMe = profileData?.bio || 'No bio added yet.';
+  const displayedProfileImage = profileData?.profilePhotoUrl || profileImage;
 
   if (isLoading) {
     return <div>Loading profile...</div>;
@@ -322,10 +614,14 @@ const Profile = () => {
             <div className='space-y-10'>
               {/* Photo Upload Section */}
               <div className='flex flex-col md:flex-row items-center gap-6'>
-                <img
+                <UserAvatar
                   src={profileImage}
                   alt='Profile'
-                  className='h-28 w-28 rounded-full object-cover border-4 border-gray-50'
+                  firstName={formData.firstName}
+                  lastName={formData.lastName}
+                  name={`${formData.firstName} ${formData.lastName}`.trim()}
+                  className='h-28 w-28 border-4 border-gray-50 object-cover'
+                  initialsClassName='text-3xl'
                 />
                 <div className='flex flex-col items-center md:items-start'>
                   <input
@@ -343,10 +639,16 @@ const Profile = () => {
                     Upload Photo
                   </button>
                   <p className='text-[11px] text-gray-400 mt-3 font-medium'>
-                    JPG, PNG or GIF, Max size 2MB
+                    JPG, PNG or GIF. Images are optimized before upload.
                   </p>
                 </div>
               </div>
+
+              {error && (
+                <div className='rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600'>
+                  {error}
+                </div>
+              )}
 
               {/* Form Fields */}
               <div className='grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6'>
@@ -444,7 +746,11 @@ const Profile = () => {
       {/* Top Banner */}
       <div className='h-48 w-full bg-gradient-to-r from-[#426154] to-[#5ba085] relative'>
         <button
-          onClick={() => setIsEditing(true)}
+          onClick={() => {
+            setFormData(buildProfileFormData(profileData));
+            setProfileImage(profileData?.profilePhotoUrl || '');
+            setIsEditing(true);
+          }}
           className='absolute top-6 right-6 md:right-8 bg-white text-gray-700 px-4 py-2 rounded-full text-xs font-semibold flex items-center gap-2 transition-colors shadow-sm hover:bg-gray-50'
         >
           <Edit3 size={14} />
@@ -456,10 +762,14 @@ const Profile = () => {
         {/* Profile Header (Floating) */}
         <div className='flex flex-col items-center text-center mb-8'>
           <div className='relative mb-4'>
-            <img
-              src={profileImage}
+            <UserAvatar
+              src={displayedProfileImage}
               alt='Profile'
-              className='h-32 w-32 rounded-full border-[6px] border-white object-cover shadow-lg'
+              firstName={profileData?.firstName}
+              lastName={profileData?.lastName}
+              name={user.name}
+              className='h-32 w-32 border-[6px] border-white object-cover shadow-lg'
+              initialsClassName='text-4xl shadow-lg'
             />
           </div>
           <h1 className='text-2xl font-bold text-gray-800 tracking-tight mb-1'>
@@ -562,19 +872,66 @@ const Profile = () => {
                 <h2 className='text-[17px] font-bold text-gray-800'>
                   Core Skills
                 </h2>
-                <button className='text-[#059669] text-xs font-bold hover:underline flex items-center gap-1'>
-                  + Add
+                <button
+                  onClick={() => {
+                    setIsAddingSkill((currentValue) => !currentValue);
+                    setSkillError('');
+                  }}
+                  className='text-[#059669] text-xs font-bold hover:underline flex items-center gap-1'
+                >
+                  <Plus size={12} />
+                  Add
                 </button>
               </div>
+              {isAddingSkill ? (
+                <div className='mb-4 space-y-2'>
+                  <div className='flex flex-col gap-2 sm:flex-row'>
+                    <input
+                      type='text'
+                      value={newSkill}
+                      onChange={(event) => setNewSkill(event.target.value)}
+                      placeholder='Add a new skill'
+                      className='w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm outline-none transition focus:border-[#426154] focus:ring-2 focus:ring-[#426154]/15'
+                    />
+                    <div className='flex gap-2'>
+                      <button
+                        onClick={handleAddSkill}
+                        className='rounded-xl bg-[#607d72] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#4d665d]'
+                      >
+                        Save
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsAddingSkill(false);
+                          setNewSkill('');
+                          setSkillError('');
+                        }}
+                        className='rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-semibold text-gray-600 hover:bg-gray-50'
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                  {skillError ? (
+                    <p className='text-xs font-medium text-red-500'>{skillError}</p>
+                  ) : null}
+                </div>
+              ) : null}
               <div className='flex flex-wrap gap-2'>
-                {skills.map((skill, idx) => (
-                  <span
-                    key={idx}
-                    className={`${skill.color} text-[11px] font-bold px-4 py-2 rounded-full opacity-90`}
-                  >
-                    {skill.name}
-                  </span>
-                ))}
+                {skills.length > 0 ? (
+                  skills.map((skill, idx) => (
+                    <span
+                      key={idx}
+                      className={`${skill.color} text-[11px] font-bold px-4 py-2 rounded-full opacity-90`}
+                    >
+                      {skill.name}
+                    </span>
+                  ))
+                ) : (
+                  <p className='text-sm font-medium text-gray-400'>
+                    Add your strongest skills so your profile feels complete.
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -598,7 +955,7 @@ const Profile = () => {
               </div>
 
               <div className='p-6 md:p-8 space-y-8'>
-                {learningPath.map((path) => (
+                {learningPath.length > 0 ? learningPath.map((path) => (
                   <div key={path.id} className='space-y-4'>
                     <div className='flex items-center gap-4'>
                       <div className='h-12 w-12 bg-[#F3F4F6] rounded-xl flex items-center justify-center p-3'>
@@ -629,11 +986,15 @@ const Profile = () => {
                     <div className='inline-block bg-[#F9FAFB] text-[#059669] text-[10px] font-bold px-3 py-1 rounded-full border border-gray-50'>
                       {path.status}
                     </div>
-                    {path.id === 1 && (
+                    {path.id === learningPath[0]?.id && (
                       <div className='border-b border-gray-50 pt-4' />
                     )}
                   </div>
-                ))}
+                )) : (
+                  <div className='rounded-2xl bg-[#F9FAFB] p-5 text-center text-sm text-gray-500'>
+                    Enroll in a course to see your learning path here.
+                  </div>
+                )}
 
                 <div className='mt-10 pt-4'>
                   <div className='flex justify-between items-center mb-2'>
@@ -641,17 +1002,20 @@ const Profile = () => {
                       Overall Learning Progress
                     </p>
                     <p className='text-[11px] font-bold text-gray-800'>
-                      45% Complete
+                      {learningSummary.overallProgress}% Complete
                     </p>
                   </div>
                   <div className='relative h-2 w-full bg-[#F3F4F6] rounded-full overflow-hidden mb-4'>
                     <div
                       className='absolute inset-y-0 left-0 bg-[#059669] rounded-full'
-                      style={{ width: '45%' }}
+                      style={{ width: `${learningSummary.overallProgress}%` }}
                     />
                   </div>
                   <div className='flex justify-between items-center text-[10px] text-gray-400 font-medium'>
-                    <p>3 of 12 enrolled courses actively progressing</p>
+                    <p>
+                      {learningSummary.activeCourses} of {learningSummary.totalCourses}{' '}
+                      enrolled courses actively progressing
+                    </p>
                     <p>Internship ends April, 2026</p>
                   </div>
                 </div>

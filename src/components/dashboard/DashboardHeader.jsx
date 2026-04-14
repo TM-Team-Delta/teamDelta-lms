@@ -2,10 +2,15 @@ import React, { useState } from 'react';
 import { Search, Bell, MessageSquare, X, Flame, Menu } from 'lucide-react';
 import sidepic from '../../assets/sidepic.jpg';
 import { Link, useLocation } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 
 const DashboardHeader = ({ onMenuClick }) => {
   const [showSearch, setShowSearch] = useState(false);
+  const { profile } = useAuth();
   const location = useLocation();
+  const streakDays = Number(
+    profile?.stats?.streakDays || profile?.streakDays || 0
+  );
 
   // Determine page title based on route
   const getPageTitle = () => {
@@ -92,7 +97,7 @@ const DashboardHeader = ({ onMenuClick }) => {
         <div className='hidden items-center gap-2 rounded-lg bg-bg-muted px-4 py-2.5 md:flex'>
           <Flame size={18} className='text-brand-accent' />
           <span className='text-sm font-medium text-text-primary'>
-            12-day streak
+            {streakDays}-day streak
           </span>
         </div>
 
@@ -118,7 +123,7 @@ const DashboardHeader = ({ onMenuClick }) => {
           aria-label='Go to profile page'
         >
           <img
-            src={sidepic}
+            src={profile?.profilePhotoUrl || sidepic}
             alt='User profile'
             className='h-10 w-10 rounded-full object-cover sm:h-11 sm:w-11'
           />
