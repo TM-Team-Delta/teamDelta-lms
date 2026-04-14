@@ -37,7 +37,7 @@ const CourseLearningSidebar = ({
   isCourseCompleted,
 }) => {
   return (
-    <div className='h-screen overflow-y-auto border-r border-neutral bg-bg-muted px-4 py-5'>
+    <div className='h-[calc(100dvh-76px)] overflow-y-auto border-r border-neutral bg-bg-muted px-4 py-5'>
       <div className='space-y-1 pb-4'>
         <p className='text-[13px] font-bold leading-5 text-text-primary'>
           {course.title}
