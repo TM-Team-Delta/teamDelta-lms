@@ -1,0 +1,135 @@
+import { CheckCheck, Settings } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import FilterTabs from '../../components/notifications/FilterTabs';
+import Card from '../../components/ui/Card';
+import NotificationsList from '../../components/notifications/NotificationsList';
+import NotificationStats from '../../components/notifications/NotificationStats';
+import NotificationsSkeleton from '../../components/notifications/NotificationsSkeleton';
+import { notificationsService } from '../../services/notifications';
+
+const Notifications = () => {
+  const [activeTab, setActiveTab] = useState('all');
+  const [notifications, setNotifications] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [tabs, setTabs] = useState(null);
+  const [pagination, setPagination] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const fetchNotifications = async () => {
+      try {
+        const response = await notificationsService.getNotifications();
+        setNotifications(response.data?.notifications || []);
+        setSummary(response.data?.summary || null);
+        setTabs(response.data?.tabs || null);
+        setPagination(response.data?.pagination || null);
+      } catch (err) {
+        setError(err.response?.data?.message || 'Failed to load notifications');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchNotifications();
+  }, []);
+
+  const filteredNotifications = useMemo(() => {
+    if (activeTab === 'all') return notifications;
+
+    if (activeTab === 'unread') {
+      return notifications.filter((item) => !item.isRead);
+    }
+
+    return notifications.filter((item) => item.type === activeTab);
+  }, [activeTab, notifications]);
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      await notificationsService.markAllAsRead();
+      setNotifications((prev) =>
+        prev.map((item) => ({
+          ...item,
+          isRead: true,
+        }))
+      );
+      setSummary((prev) =>
+        prev
+          ? {
+              ...prev,
+              unread: 0,
+            }
+          : prev
+      );
+      setTabs((prev) =>
+        prev
+          ? {
+              ...prev,
+              unread: 0,
+            }
+          : prev
+      );
+    } catch (err) {
+      console.error('Failed to mark all notifications as read', err);
+    }
+  };
+
+  if (isLoading) {
+    return <NotificationsSkeleton />;
+  }
+
+  if (error) {
+    return <div>{error}</div>;
+  }
+
+  return (
+    <section className='flex flex-col gap-6 p-4 pt-0 sm:p-5 sm:pt-0 md:min-h-[calc(100vh-92px)] md:p-6 md:pt-0'>
+      <div className='flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between'>
+        <div>
+          <h1 className='text-2xl font-semibold text-text-primary sm:text-3xl'>
+            Notifications
+          </h1>
+          <p className='mt-1 text-sm text-text-secondary'>
+            Stay updated with your activities and alerts.
+          </p>
+        </div>
+
+        <div className='flex items-center gap-4'>
+          <button
+            type='button'
+            onClick={handleMarkAllAsRead}
+            className='flex cursor-pointer items-center gap-2 text-sm font-medium text-brand-secondary transition-colors hover:text-brand-secondary/70'
+          >
+            <CheckCheck size={18} />
+            Mark all as read
+          </button>
+
+          <button className='text-text-primary' type='button'>
+            <Settings />
+          </button>
+        </div>
+      </div>
+
+      <Card className='bg-white'>
+        <FilterTabs
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          notifications={notifications}
+          tabs={tabs}
+        />
+
+        <NotificationsList notifications={filteredNotifications} />
+      </Card>
+
+      <div className='mt-auto'>
+        <NotificationStats
+          notifications={notifications}
+          summary={summary}
+          pagination={pagination}
+        />
+      </div>
+    </section>
+  );
+};
+
+export default Notifications;

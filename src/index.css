@@ -1,0 +1,57 @@
+@import 'tailwindcss';
+
+@theme {
+  /* FONT */
+  --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+  --font-heading: 'Fraunces', Georgia, serif;
+
+ /* GLOBAL COLOR TOKEN */
+  --color-brand-primary: #133929; /* dark green */
+  --color-brand-secondary: #22c55e; /* green */
+  --color-brand-accent: #f7b13c; /* orange */
+  --color-brand-accent-bg: #fef5e7; /* light orange background */
+  --color-brand-muted: #f3fdf7; /* very light green */
+  --color-warning-primary: #e35d6a; /* red */
+  --color-warning-secondary: #fcebec; /* light red */
+
+  --color-text-primary: #333333; /* dark gray */
+  --color-text-secondary: #848484; /* gray */
+
+  --color-button-primary: #426154; /* green */
+  --color-button-secondary: #c7f8d9; /* light green */
+
+  --color-bg-primary: #e6e6e6; /* light gray */
+  --color-bg-muted: #f3f3f3; /* softer gray */
+
+  --color-neutral: #e5e7eb; /* neutral gray */
+
+  /* CHAT-PAGE COLOR TOKEN */
+  --color-brand-primary-200: #018a48;
+  --color-brand-accent-200: #f59e0b;
+  --color-primary-800: #0a1f17;
+  --color-primary-900: #081811;
+  --color-neutrals-d-300: #adadad;
+  --color-neutrals-d-500: #848484;
+  --color-neutrals-d-600: #787878;
+  --color-neutrals-d-700: #9a9a9a;
+  --color-neutrals-d-800: #494949;
+  --color-neutrals-l-800: #777777;
+  --color-neutrals-l-900: #373737;
+  --color-bg-muted-100: #f9f9f9;
+  --color-border: #d9d9d9;
+}
+
+@layer base {
+  html,
+  body {
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+    overflow-x: hidden;
+  }
+}
+
+@layer components {
+  .container {
+    @apply mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl;
+  }
+}
