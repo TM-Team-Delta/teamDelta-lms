@@ -27,11 +27,11 @@ import ForgotPassword from './pages/auth/ForgotPassword';
 import ResetPassword from './pages/auth/ResetPassword';
 import GoogleCallback from './pages/auth/GoogleCallback';
 
-import CourseCatalog from '../../frontend-repo/src/pages/courses/CourseCatalog';
-import CourseDetail from '../../frontend-repo/src/pages/courses/CourseDetail';
-import CourseUnitDetail from '../../frontend-repo/src/pages/courses/CourseUnitDetail';
-import CourseLessonDetail from '../../frontend-repo/src/pages/courses/CourseLessonDetail';
-import CourseCertificate from '../../frontend-repo/src/pages/courses/CourseCertificate';
+import CourseCatalog from './pages/courses/CourseCatalog';
+import CourseDetail from './pages/courses/CourseDetail';
+import CourseUnitDetail from './pages/courses/CourseUnitDetail';
+import CourseLessonDetail from './pages/courses/CourseLessonDetail';
+import CourseCertificate from './pages/courses/CourseCertificate';
 
 const App = () => {
   return (
