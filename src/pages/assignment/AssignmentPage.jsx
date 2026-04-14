@@ -1,182 +1,303 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { UploadCloud } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { LoaderCircle, UploadCloud, X } from 'lucide-react';
+import AssignmentSkeleton from '../../components/assignment/AssignmentSkeleton';
 import { assignmentService } from '../../services/assignment';
+
+const emptySummary = {
+  total: 0,
+  submitted: 0,
+  pending: 0,
+};
+
+const normalizeAssignmentListResponse = (payload) => {
+  const data = payload?.data || payload;
+
+  const assignments =
+    data?.assignments ||
+    data?.items ||
+    data?.rows ||
+    data?.results ||
+    (Array.isArray(data) ? data : []);
+
+  const summary = data?.summary || {
+    total: assignments.length,
+    submitted: assignments.filter((assignment) =>
+      ['submitted', 'completed', 'graded'].includes(
+        String(
+          assignment?.status || assignment?.submissionStatus || ''
+        ).toLowerCase()
+      )
+    ).length,
+    pending: assignments.filter((assignment) =>
+      !['submitted', 'completed', 'graded'].includes(
+        String(
+          assignment?.status || assignment?.submissionStatus || ''
+        ).toLowerCase()
+      )
+    ).length,
+  };
+
+  return {
+    assignments: Array.isArray(assignments) ? assignments : [],
+    summary: summary || emptySummary,
+  };
+};
+
+const normalizeStatus = (assignment) =>
+  String(assignment?.status || assignment?.submissionStatus || 'pending')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .toLowerCase();
+
+const formatStatusLabel = (status) =>
+  status.replace(/\b\w/g, (char) => char.toUpperCase());
+
+const getAssignmentId = (assignment) => assignment?.id || assignment?._id;
+
+const getLessonTitle = (assignment) =>
+  assignment?.lessonTitle ||
+  assignment?.lessonName ||
+  assignment?.title ||
+  'Untitled assignment';
+
+const getAssignmentDescription = (assignment) =>
+  assignment?.description || assignment?.instructions || 'No description provided.';
+
+const getAssignmentDueDate = (assignment) =>
+  assignment?.dueDate || assignment?.deadline || 'No due date';
+
+const isResubmittable = (status) =>
+  ['needs resubmission', 'resubmit', 'rejected', 'returned'].includes(status);
+
+const isSubmittable = (status) =>
+  status === 'pending' || status === 'not submitted' || isResubmittable(status);
+
+const getActionLabel = (status) =>
+  isResubmittable(status) ? 'Resubmit Assignment' : 'Submit Assignment';
+
+const getStatusClasses = (status) => {
+  if (isResubmittable(status)) {
+    return 'bg-amber-100 text-amber-700';
+  }
+
+  if (isSubmittable(status)) {
+    return 'bg-yellow-100 text-yellow-600';
+  }
+
+  return 'bg-gray-200 text-gray-600';
+};
 
 const Assignments = () => {
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [selectedAssignment, setSelectedAssignment] = useState(null);
-
   const [assignments, setAssignments] = useState([]);
-  const [summary, setSummary] = useState({
-    total: 0,
-    submitted: 0,
-    pending: 0,
-  });
+  const [summary, setSummary] = useState(emptySummary);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const fetchAssignments = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError('');
+
+      const response = await assignmentService.getAssignments();
+      const normalized = normalizeAssignmentListResponse(response);
+
+      setAssignments(normalized.assignments);
+      setSummary(normalized.summary);
+    } catch (err) {
+      setError(
+        err.response?.data?.message || 'Failed to load assignments'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAssignments();
+  }, [fetchAssignments]);
 
   const openSubmitModal = (assignment) => {
     setSelectedAssignment(assignment);
     setShowSubmitModal(true);
   };
 
-  useEffect(() => {
-  const fetchAssignments = async () => {
-    try {
-      const data = await assignmentService.getAssignments();
-
-      console.log('Assignments API Response:', data);
-
-      setAssignments(data.assignments || []);
-
-      setSummary(
-        data.summary || {
-          total: 0,
-          submitted: 0,
-          pending: 0,
-        }
-      );
-    } catch (err) {
-      console.error(err.response?.data || err.message);
-    } finally {
-      setLoading(false);
-    }
+  const closeSubmitModal = () => {
+    setShowSubmitModal(false);
+    setSelectedAssignment(null);
   };
-
-  fetchAssignments();
-}, []);
 
   return (
     <div className='bg-gray-100 min-h-screen'>
-      {/* Top Bar */}
       <div className='bg-[#F9FAFB] h-16 sm:h-20 border-b border-gray-200'></div>
 
       <div className='p-4 sm:p-6 lg:p-8'>
-        {/* Stats */}
-        <div className='grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-8 mt-4'>
-          <div className='bg-[#F3FDF8] rounded-lg p-5 border border-gray-200'>
-            <p className='text-sm text-gray-600'>Total Assignments</p>
-            <p className='text-lg font-semibold text-gray-800'>
-              {summary.total}
-            </p>
+        <h2 className='text-xl font-semibold text-gray-900'>Assignments</h2>
+        <p className='mt-1 text-sm text-gray-500'>
+          Track pending work, review your submissions, and upload assignment files.
+        </p>
+
+        {error && (
+          <div className='mt-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700'>
+            {error}
           </div>
+        )}
 
-          <div className='bg-[#F3FDF8] rounded-lg p-5 border border-gray-200'>
-            <p className='text-sm text-gray-600'>Assignments Completed</p>
-            <p className='text-lg font-semibold text-gray-800'>
-              {summary.submitted}
-            </p>
-          </div>
+        {loading && <AssignmentSkeleton />}
 
-          <div className='bg-[#F3FDF8] rounded-lg p-5 border border-gray-200'>
-            <p className='text-sm text-gray-600'>Assignments Pending</p>
-            <p className='text-lg font-semibold text-gray-800'>
-              {summary.pending}
-            </p>
-          </div>
-        </div>
-
-        {/* DESKTOP TABLE */}
-        <div className='hidden md:block bg-white border border-gray-300 overflow-x-auto rounded-lg'>
-          <table className='w-full text-sm'>
-            <thead>
-              <tr className='text-gray-600 border-b'>
-                <th className='text-left px-6 py-4'>Lesson title</th>
-                <th className='text-left px-6 py-4'>Status</th>
-                <th className='text-left px-6 py-4'>Due date</th>
-                <th className='text-left px-6 py-4'>Assignment</th>
-                <th className='px-6 py-4'></th>
-              </tr>
-            </thead>
-
-            <tbody>
-              {assignments.map((assignment) => (
-                <tr key={assignment.id} className='border-b'>
-                  <td className='px-6 py-4 text-gray-700'>
-                    {assignment.lessonTitle}
-                  </td>
-
-                  <td className='px-6 py-4 text-gray-600'>
-                    {assignment.status}
-                  </td>
-
-                  <td className='px-6 py-4 text-gray-600'>
-                    {assignment.dueDate}
-                  </td>
-
-                  <td className='px-6 py-4 text-gray-600'>
-                    {assignment.description}
-                  </td>
-
-                  <td className='px-6 py-4'>
-                    {assignment.status === 'pending' ? (
-                      <button
-                        onClick={() => openSubmitModal(assignment)}
-                        className='bg-button-primary hover:bg-[#365246] text-white px-4 py-2 rounded-md text-xs'
-                      >
-                        Submit Assignment
-                      </button>
-                    ) : (
-                      <button className='bg-gray-300 text-gray-600 px-4 py-2 rounded-md text-xs cursor-default'>
-                        Assignment Submitted
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* MOBILE */}
-        <div className='md:hidden space-y-4'>
-          {assignments.map((assignment) => (
-            <div
-              key={assignment.id}
-              className='bg-white border border-gray-200 rounded-xl p-4 shadow-sm'
-            >
-              <h3 className='text-sm font-semibold text-gray-800 mb-2'>
-                {assignment.lessonTitle}
-              </h3>
-
-              <p className='text-xs text-gray-600 mb-3'>
-                {assignment.description}
-              </p>
-
-              <div className='flex justify-between text-xs text-gray-500 mb-3'>
-                <span>{assignment.dueDate}</span>
-                <span
-                  className={`px-2 py-1 rounded-full text-[10px] ${
-                    assignment.status === 'pending'
-                      ? 'bg-yellow-100 text-yellow-600'
-                      : 'bg-gray-200 text-gray-600'
-                  }`}
-                >
-                  {assignment.status}
-                </span>
+        {!loading && !error && (
+          <>
+            <div className='grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6 mb-8 mt-6'>
+              <div className='bg-[#F3FDF8] rounded-lg p-5 border border-gray-200'>
+                <p className='text-sm text-gray-600'>Total Assignments</p>
+                <p className='text-lg font-semibold text-gray-800'>
+                  {summary.total}
+                </p>
               </div>
 
-              {assignment.status === 'pending' ? (
-                <button
-                  onClick={() => openSubmitModal(assignment)}
-                  className='w-full bg-button-primary text-white py-2 rounded-md text-xs'
-                >
-                  Submit Assignment
-                </button>
-              ) : (
-                <button className='w-full bg-gray-300 text-gray-600 py-2 rounded-md text-xs'>
-                  Assignment Submitted
-                </button>
-              )}
+              <div className='bg-[#F3FDF8] rounded-lg p-5 border border-gray-200'>
+                <p className='text-sm text-gray-600'>Assignments Completed</p>
+                <p className='text-lg font-semibold text-gray-800'>
+                  {summary.submitted}
+                </p>
+              </div>
+
+              <div className='bg-[#F3FDF8] rounded-lg p-5 border border-gray-200'>
+                <p className='text-sm text-gray-600'>Assignments Pending</p>
+                <p className='text-lg font-semibold text-gray-800'>
+                  {summary.pending}
+                </p>
+              </div>
             </div>
-          ))}
-        </div>
+
+            {assignments.length === 0 ? (
+              <div className='rounded-xl border border-gray-200 bg-white px-4 py-10 text-center text-sm text-gray-500'>
+                No assignments available right now.
+              </div>
+            ) : (
+              <>
+                <div className='hidden md:block bg-white border border-gray-300 overflow-x-auto rounded-lg'>
+                  <table className='w-full text-sm'>
+                    <thead>
+                      <tr className='text-gray-600 border-b'>
+                        <th className='text-left px-6 py-4'>Lesson title</th>
+                        <th className='text-left px-6 py-4'>Status</th>
+                        <th className='text-left px-6 py-4'>Due date</th>
+                        <th className='text-left px-6 py-4'>Assignment</th>
+                        <th className='px-6 py-4'></th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {assignments.map((assignment) => {
+                        const status = normalizeStatus(assignment);
+                        const canSubmit = isSubmittable(status);
+
+                        return (
+                          <tr
+                            key={getAssignmentId(assignment)}
+                            className='border-b last:border-b-0'
+                          >
+                            <td className='px-6 py-4 text-gray-700'>
+                              {getLessonTitle(assignment)}
+                            </td>
+
+                            <td className='px-6 py-4 text-gray-600'>
+                              <span
+                                className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${getStatusClasses(
+                                  status
+                                )}`}
+                              >
+                                {formatStatusLabel(status)}
+                              </span>
+                            </td>
+
+                            <td className='px-6 py-4 text-gray-600'>
+                              {getAssignmentDueDate(assignment)}
+                            </td>
+
+                            <td className='px-6 py-4 text-gray-600'>
+                              {getAssignmentDescription(assignment)}
+                            </td>
+
+                            <td className='px-6 py-4 text-right'>
+                              {canSubmit ? (
+                                <button
+                                  onClick={() => openSubmitModal(assignment)}
+                                  className='bg-button-primary hover:bg-[#365246] text-white px-4 py-2 rounded-md text-xs'
+                                >
+                                  {getActionLabel(status)}
+                                </button>
+                              ) : (
+                                <button className='bg-gray-300 text-gray-600 px-4 py-2 rounded-md text-xs cursor-default'>
+                                  Assignment Submitted
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className='md:hidden space-y-4'>
+                  {assignments.map((assignment) => {
+                    const status = normalizeStatus(assignment);
+                    const canSubmit = isSubmittable(status);
+
+                    return (
+                      <div
+                        key={getAssignmentId(assignment)}
+                        className='bg-white border border-gray-200 rounded-xl p-4 shadow-sm'
+                      >
+                        <h3 className='text-sm font-semibold text-gray-800 mb-2'>
+                          {getLessonTitle(assignment)}
+                        </h3>
+
+                        <p className='text-xs text-gray-600 mb-3'>
+                          {getAssignmentDescription(assignment)}
+                        </p>
+
+                        <div className='flex justify-between text-xs text-gray-500 mb-3 gap-3'>
+                          <span>{getAssignmentDueDate(assignment)}</span>
+                          <span
+                            className={`px-2 py-1 rounded-full text-[10px] font-medium ${getStatusClasses(
+                              status
+                            )}`}
+                          >
+                            {formatStatusLabel(status)}
+                          </span>
+                        </div>
+
+                        {canSubmit ? (
+                          <button
+                            onClick={() => openSubmitModal(assignment)}
+                            className='w-full bg-button-primary text-white py-2 rounded-md text-xs'
+                          >
+                            {getActionLabel(status)}
+                          </button>
+                        ) : (
+                          <button className='w-full bg-gray-300 text-gray-600 py-2 rounded-md text-xs'>
+                            Assignment Submitted
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </>
+        )}
       </div>
 
-      {/* MODAL */}
       {showSubmitModal && selectedAssignment && (
         <Modal
           assignment={selectedAssignment}
-          setShowSubmitModal={setShowSubmitModal}
+          onClose={closeSubmitModal}
+          onSuccess={fetchAssignments}
         />
       )}
     </div>
@@ -185,91 +306,120 @@ const Assignments = () => {
 
 export default Assignments;
 
-
-
-
-
-// ================= MODAL =================
-
-const Modal = ({ setShowSubmitModal, assignment }) => {
+const Modal = ({ assignment, onClose, onSuccess }) => {
   const [file, setFile] = useState(null);
   const [link, setLink] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
   const fileRef = useRef();
 
-  const handleFile = (f) => {
-    if (!f) return;
+  const status = normalizeStatus(assignment);
+  const submitLabel = getActionLabel(status);
+
+  const handleFile = (selectedFile) => {
+    if (!selectedFile) return;
 
     const valid = ['application/pdf', 'image/png', 'image/jpeg'];
-    if (!valid.includes(f.type)) {
-      alert('Only PDF, PNG, JPEG allowed');
+    if (!valid.includes(selectedFile.type)) {
+      setError('Only PDF, PNG, and JPEG files are allowed.');
       return;
     }
 
-    if (f.size > 12 * 1024 * 1024) {
-      alert('Max file size is 12MB');
+    if (selectedFile.size > 12 * 1024 * 1024) {
+      setError('Max file size is 12MB.');
       return;
     }
 
-    setFile(f);
+    setError('');
+    setFile(selectedFile);
   };
 
   const handleSubmit = async () => {
-    try {
-      const res = await assignmentService.submitAssignment(
-        assignment.id,
-        { link, file }
-      );
+    if (!link && !file) {
+      setError('Add a link or upload a file before submitting.');
+      return;
+    }
 
-      alert(res.message);
-      setShowSubmitModal(false);
-      window.location.reload();
+    try {
+      setSubmitting(true);
+      setError('');
+
+      if (isResubmittable(status)) {
+        await assignmentService.resubmitAssignment(getAssignmentId(assignment), {
+          link,
+          file,
+        });
+      } else {
+        await assignmentService.submitAssignment(getAssignmentId(assignment), {
+          link,
+          file,
+        });
+      }
+
+      await onSuccess();
+      onClose();
     } catch (err) {
-      alert(err.response?.data?.message || err.message);
+      setError(
+        err.response?.data?.message || err.message || 'Failed to submit assignment'
+      );
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
     <div className='fixed inset-0 bg-black/70 flex items-center justify-center z-50 px-2'>
       <div className='bg-white w-full max-w-lg rounded-2xl shadow-xl p-6'>
-        <div className='flex justify-between mb-4'>
-          <h3 className='text-lg font-semibold'>Submit Assignment</h3>
-          <button onClick={() => setShowSubmitModal(false)}>✕</button>
+        <div className='flex justify-between items-center mb-4'>
+          <h3 className='text-lg font-semibold'>{submitLabel}</h3>
+          <button
+            onClick={onClose}
+            className='rounded-full p-1 text-gray-500 transition hover:bg-gray-100'
+          >
+            <X className='h-5 w-5' />
+          </button>
         </div>
 
-        <p className='text-sm text-gray-500 mb-4'>
-          {assignment.lessonTitle}
-        </p>
+        <p className='text-sm text-gray-500 mb-4'>{getLessonTitle(assignment)}</p>
 
-        {/* Link */}
+        {error && (
+          <div className='mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700'>
+            {error}
+          </div>
+        )}
+
         <input
           value={link}
-          onChange={(e) => setLink(e.target.value)}
-          placeholder='Paste link'
+          onChange={(event) => setLink(event.target.value)}
+          placeholder='Paste assignment link'
           className='w-full mb-4 p-3 border rounded-lg'
         />
 
-        {/* Upload */}
         <div
-          onClick={() => fileRef.current.click()}
-          className='border rounded-lg p-6 text-center cursor-pointer'
+          onClick={() => fileRef.current?.click()}
+          className='border rounded-lg p-6 text-center cursor-pointer transition hover:border-gray-400'
         >
           <UploadCloud className='mx-auto mb-2' />
-          {file ? file.name : 'Click to upload file'}
+          <p className='text-sm text-gray-700'>
+            {file ? file.name : 'Click to upload PDF, PNG, or JPEG'}
+          </p>
+          <p className='mt-1 text-xs text-gray-500'>Maximum file size: 12MB</p>
         </div>
 
         <input
           type='file'
           hidden
           ref={fileRef}
-          onChange={(e) => handleFile(e.target.files[0])}
+          onChange={(event) => handleFile(event.target.files?.[0])}
         />
 
-        {/* Submit */}
         <button
           onClick={handleSubmit}
-          className='w-full mt-4 bg-button-primary text-white py-2 rounded-lg'
+          disabled={submitting}
+          className='mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-button-primary py-2 text-white disabled:cursor-not-allowed disabled:opacity-70'
         >
-          Submit Assignment
+          {submitting && <LoaderCircle className='h-4 w-4 animate-spin' />}
+          {submitting ? 'Submitting...' : submitLabel}
         </button>
       </div>
     </div>

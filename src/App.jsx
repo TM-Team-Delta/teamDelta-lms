@@ -7,6 +7,7 @@ import Assignments from './pages/assignment/AssignmentPage';
 import TrackProgress from './pages/trackprogress/TrackProgress';
 import Certificates from './pages/certificate/Certificates';
 import Team from './pages/team/Team';
+import MentorProfile from './pages/mentors/MentorProfile';
 
 import Chat from './pages/chat/Chat';
 import Profile from './pages/dashboard/Profile';
@@ -57,6 +58,7 @@ const App = () => {
         <Route path='dashboard' element={<Dashboard />} />
         <Route path='/dashboard/courses' element={<CourseCatalog />} />
         <Route path='/dashboard/team' element={<Team />} />
+        <Route path='/dashboard/mentors/:mentorId' element={<MentorProfile />} />
         <Route path='/dashboard/profile' element={<Profile />} />
         <Route path='/dashboard/track-progress' element={<TrackProgress />} />
         <Route path='/dashboard/certificate' element={<Certificates />} />
