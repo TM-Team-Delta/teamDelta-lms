@@ -397,27 +397,12 @@ const Modal = ({ assignment, onClose, onSuccess }) => {
       setError('');
 
       if (isResubmittable(status) && getAssignmentId(assignment)) {
-        await assignmentService.resubmitAssignment(
-          getAssignmentId(assignment),
-          {
-            link,
-            file,
-          }
-        );
-      } else if (assignment?.assignmentId) {
-        await assignmentService.submitAssignment(assignment.assignmentId, {
+        await assignmentService.resubmitAssignment(getAssignmentId(assignment), {
           link,
           file,
         });
       } else {
-        // Course-derived assignments are submitted through the lesson endpoint.
-        await assignmentService.submitAssignmentFromLesson({
-          lessonId: assignment.lessonId,
-          courseId: assignment.courseId,
-          unitId: assignment.unitId,
-          lessonIndex: assignment.lessonIndex,
-          title: assignment.lessonTitle,
-          description: assignment.description,
+        await assignmentService.submitAssignment(assignment.assignmentId, {
           link,
           file,
         });
