@@ -148,8 +148,13 @@ const CourseLessonDetail = () => {
     loadLessonPage();
   }, [courseId, itemIndex, lessonIndex, moduleId, sectionIndex]);
 
-  const { statusByUnitId, isCourseCompleted, completeUnit, startUnit } =
-    useCourseProgress(course);
+  const {
+    statusByUnitId,
+    isCourseCompleted,
+    completeLesson,
+    completedLessonIds,
+    isSubmitting,
+  } = useCourseProgress(course);
 
   const module = useMemo(() => {
     if (!course) return null;
@@ -180,13 +185,6 @@ const CourseLessonDetail = () => {
   const unitStatus = currentUnit
     ? statusByUnitId[currentUnit.id] || 'locked'
     : 'locked';
-
-  useEffect(() => {
-    if (!currentUnit) return;
-    if (unitStatus === 'available') {
-      startUnit(currentUnit.id);
-    }
-  }, [currentUnit, startUnit, unitStatus]);
 
   if (isLoading) {
     return <CoursePageSkeleton compact />;
@@ -240,7 +238,7 @@ const CourseLessonDetail = () => {
   const externalVideoUrl = getExternalVideoUrl(
     currentLesson.video?.sourceUrl || currentLesson.video?.url
   );
-  const isUnitCompleted = unitStatus === 'completed';
+  const isLessonCompleted = completedLessonIds.includes(String(currentLesson.id));
 
   const sidebar = (
     <CourseLearningSidebar
@@ -368,11 +366,16 @@ const CourseLessonDetail = () => {
               <div className='flex flex-wrap items-center gap-3'>
                 <button
                   type='button'
-                  onClick={() => completeUnit(currentUnit.id)}
-                  className='inline-flex items-center gap-2 rounded-md bg-brand-primary px-4 py-2 text-sm font-medium text-white transition hover:opacity-90'
+                  onClick={() => completeLesson(currentLesson.id)}
+                  disabled={isLessonCompleted || isSubmitting}
+                  className='inline-flex items-center gap-2 rounded-md bg-brand-primary px-4 py-2 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60'
                 >
                   <PlayCircle size={16} />
-                  {isUnitCompleted ? 'Completed' : 'Mark unit as completed'}
+                  {isLessonCompleted
+                    ? 'Lesson completed'
+                    : isSubmitting
+                      ? 'Saving progress...'
+                      : 'Mark lesson as completed'}
                 </button>
 
                 <Link

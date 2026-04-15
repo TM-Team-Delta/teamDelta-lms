@@ -1,29 +1,18 @@
 import { Link } from 'react-router-dom';
-import {
-  deriveCourseProgress,
-  getStoredCourseProgress,
-} from '../../utils/courseProgress';
 
 const getCourseCtaLink = (course) => {
-  const storedProgress = getStoredCourseProgress(course.id);
-  const progress = deriveCourseProgress(course, storedProgress);
+  const firstModule = course?.courseOutline?.[0];
+  const firstUnit = firstModule?.units?.[0];
 
-  if (progress.isCourseCompleted) {
+  if (Number(course?.enrollment?.progressPercent) >= 100) {
     return `/dashboard/course-detail/${course.id}/certificate`;
   }
 
-  const nextUnit =
-    progress.unitSequence.find(
-      (item) =>
-        progress.statusByUnitId[item.unitId] === 'in-progress' ||
-        progress.statusByUnitId[item.unitId] === 'available'
-    ) || progress.unitSequence[0];
-
-  if (!nextUnit) {
+  if (!firstModule || !firstUnit) {
     return `/dashboard/course-detail/${course.id}`;
   }
 
-  return `/dashboard/course-detail/${course.id}/modules/${nextUnit.moduleId}/items/${nextUnit.unitIndex}`;
+  return `/dashboard/course-detail/${course.id}/modules/${firstModule.id}/items/0`;
 };
 
 const CourseDetailHero = ({

@@ -8,7 +8,8 @@ import NotificationsSkeleton from '../../components/notifications/NotificationsS
 import { assignmentService } from '../../services/assignment';
 import { coursesService } from '../../services/courses';
 import { notificationsService } from '../../services/notifications';
-import { useAuth } from '../../context/AuthContext';
+import { trackProgressService } from '../../services/trackProgressService';
+import { useAuth } from '../../context/useAuth';
 import { buildMergedAssignments } from '../../utils/assignmentData';
 import {
   buildGeneratedNotifications,
@@ -72,9 +73,13 @@ const Notifications = () => {
           assignmentsPayload: assignmentsResponse,
           courses: detailedCourses,
         });
+        const progressByCourse = await trackProgressService.getProgressByCourseIds(
+          detailedCourses.map((course) => course.id)
+        );
         const generatedNotifications = buildGeneratedNotifications({
           courses: detailedCourses,
           assignments: assignmentSummary.assignments,
+          progressByCourse,
           profile,
         });
         const mergedNotifications = mergeNotifications({

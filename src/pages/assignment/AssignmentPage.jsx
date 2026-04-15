@@ -9,7 +9,6 @@ import { normalizeCourseList } from '../../utils/courseApi';
 import {
   buildMergedAssignments,
   getAssignmentStatus,
-  markFallbackAssignmentSubmitted,
 } from '../../utils/assignmentData';
 import { removeSessionCache } from '../../utils/sessionCache';
 
@@ -21,38 +20,33 @@ const emptySummary = {
 
 const buildCachedAssignmentView = () => {
   const cachedAssignments = assignmentService.peekAssignments();
-
-  if (!cachedAssignments) {
-    return {
-      assignments: [],
-      summary: emptySummary,
-      hasCachedData: false,
-    };
-  }
-
   const cachedEnrolled = coursesService.peekEnrolledCourses();
-  const enrolledCourses = cachedEnrolled ? normalizeCourseList(cachedEnrolled) : [];
+  const enrolledCourses = cachedEnrolled
+    ? normalizeCourseList(cachedEnrolled)
+    : [];
   const detailedCourses =
     enrolledCourses.length > 0
       ? enrolledCourses
           .map((course) => {
             const cachedDetail = coursesService.peekCourseById(course.id);
             return cachedDetail
-              ? normalizeCourseList({ data: [cachedDetail?.data || cachedDetail] })[0]
+              ? normalizeCourseList({
+                  data: [cachedDetail?.data || cachedDetail],
+                })[0]
               : null;
           })
           .filter(Boolean)
       : [];
 
   const merged = buildMergedAssignments({
-    assignmentsPayload: cachedAssignments,
+    assignmentsPayload: cachedAssignments || { data: [] },
     courses: detailedCourses,
   });
 
   return {
     assignments: merged.assignments,
     summary: merged.summary || emptySummary,
-    hasCachedData: true,
+    hasCachedData: Boolean(cachedAssignments || detailedCourses.length > 0),
   };
 };
 
@@ -70,7 +64,9 @@ const getLessonTitle = (assignment) =>
   'Untitled assignment';
 
 const getAssignmentDescription = (assignment) =>
-  assignment?.description || assignment?.instructions || 'No description provided.';
+  assignment?.description ||
+  assignment?.instructions ||
+  'No description provided.';
 
 const getAssignmentDueDate = (assignment) =>
   assignment?.dueDate || assignment?.deadline || 'No due date';
@@ -132,8 +128,8 @@ const Assignments = () => {
           : [];
       const detailedCourses =
         detailedResponses.length > 0
-          ? detailedResponses.map((item) =>
-              normalizeCourseList({ data: [item?.data || item] })[0]
+          ? detailedResponses.map(
+              (item) => normalizeCourseList({ data: [item?.data || item] })[0]
             )
           : enrolledCourses;
       const merged = buildMergedAssignments({
@@ -144,9 +140,7 @@ const Assignments = () => {
       setAssignments(merged.assignments);
       setSummary(merged.summary || emptySummary);
     } catch (err) {
-      setError(
-        err.response?.data?.message || 'Failed to load assignments'
-      );
+      setError(err.response?.data?.message || 'Failed to load assignments');
     } finally {
       setLoading(false);
     }
@@ -173,7 +167,8 @@ const Assignments = () => {
       <div className='p-4 sm:p-6 lg:p-8'>
         <h2 className='text-xl font-semibold text-gray-900'>Assignments</h2>
         <p className='mt-1 text-sm text-gray-500'>
-          Track pending work, review your submissions, and upload assignment files.
+          Track pending work, review your submissions, and upload assignment
+          files.
         </p>
 
         {error && (
@@ -231,7 +226,8 @@ const Assignments = () => {
                       {assignments.map((assignment) => {
                         const status = normalizeStatus(assignment);
                         const canSubmit =
-                          assignment?.canSubmit !== false && isSubmittable(status);
+                          assignment?.canSubmit !== false &&
+                          isSubmittable(status);
 
                         return (
                           <tr
@@ -400,18 +396,28 @@ const Modal = ({ assignment, onClose, onSuccess }) => {
       setSubmitting(true);
       setError('');
 
-      if (isResubmittable(status)) {
-        await assignmentService.resubmitAssignment(getAssignmentId(assignment), {
-          link,
-          file,
-        });
-      } else if (assignment?.source === 'fallback') {
-        markFallbackAssignmentSubmitted(getAssignmentId(assignment), {
+      if (isResubmittable(status) && getAssignmentId(assignment)) {
+        await assignmentService.resubmitAssignment(
+          getAssignmentId(assignment),
+          {
+            link,
+            file,
+          }
+        );
+      } else if (assignment?.assignmentId) {
+        await assignmentService.submitAssignment(assignment.assignmentId, {
           link,
           file,
         });
       } else {
-        await assignmentService.submitAssignment(getAssignmentId(assignment), {
+        // Course-derived assignments are submitted through the lesson endpoint.
+        await assignmentService.submitAssignmentFromLesson({
+          lessonId: assignment.lessonId,
+          courseId: assignment.courseId,
+          unitId: assignment.unitId,
+          lessonIndex: assignment.lessonIndex,
+          title: assignment.lessonTitle,
+          description: assignment.description,
           link,
           file,
         });
@@ -423,7 +429,9 @@ const Modal = ({ assignment, onClose, onSuccess }) => {
       onClose();
     } catch (err) {
       setError(
-        err.response?.data?.message || err.message || 'Failed to submit assignment'
+        err.response?.data?.message ||
+          err.message ||
+          'Failed to submit assignment'
       );
     } finally {
       setSubmitting(false);
@@ -443,7 +451,9 @@ const Modal = ({ assignment, onClose, onSuccess }) => {
           </button>
         </div>
 
-        <p className='text-sm text-gray-500 mb-4'>{getLessonTitle(assignment)}</p>
+        <p className='text-sm text-gray-500 mb-4'>
+          {getLessonTitle(assignment)}
+        </p>
 
         {error && (
           <div className='mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700'>

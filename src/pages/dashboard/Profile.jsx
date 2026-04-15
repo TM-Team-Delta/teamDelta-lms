@@ -1,15 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { assignmentService } from '../../services/assignment';
 import { coursesService } from '../../services/courses';
+import { trackProgressService } from '../../services/trackProgressService';
 import { usersService } from '../../services/users';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../context/useAuth';
 import { buildMergedAssignments } from '../../utils/assignmentData';
 import { normalizeCourseList } from '../../utils/courseApi';
 import { buildCourseProgressSnapshot } from '../../utils/courseProgress';
-import {
-  resolveProfilePhotoScope,
-  setStoredProfilePhoto,
-} from '../../utils/profilePhotoStorage';
 import {
   Edit3,
   Mail,
@@ -337,7 +334,13 @@ const Profile = () => {
                 normalizeCourseList({ data: [response?.data || response] })[0]
               )
             : enrolledCourses;
-        const progressSnapshot = buildCourseProgressSnapshot(detailedCourses);
+        const progressByCourse = await trackProgressService.getProgressByCourseIds(
+          detailedCourses.map((course) => course.id)
+        );
+        const progressSnapshot = buildCourseProgressSnapshot(
+          detailedCourses,
+          progressByCourse
+        );
         const assignmentResponse = await assignmentService
           .getAssignments()
           .catch(() => ({ data: [] }));
@@ -423,7 +426,7 @@ const Profile = () => {
     };
 
     fetchLearningPath();
-  }, []);
+  }, [profileData]);
 
   useEffect(() => {
     const fetchBadges = async () => {
@@ -463,15 +466,10 @@ const Profile = () => {
           `${formData.firstName} ${formData.lastName}`.trim() || undefined,
         location: formData.location,
         bio: formData.bio,
+        profilePhotoUrl: formData.profilePhotoUrl || '',
       };
 
       await usersService.updateProfile(payload);
-      if (formData.profilePhotoUrl) {
-        setStoredProfilePhoto(
-          resolveProfilePhotoScope(profileData || formData),
-          formData.profilePhotoUrl
-        );
-      }
       await refreshProfile();
       setIsEditing(false);
     } catch (err) {
@@ -949,9 +947,9 @@ const Profile = () => {
                     My Learning Path
                   </h2>
                 </div>
-                <button className='text-[11px] text-[#059669] font-bold hover:underline'>
+                {/* <button className='text-[11px] text-[#059669] font-bold hover:underline'>
                   View all
-                </button>
+                </button> */}
               </div>
 
               <div className='p-6 md:p-8 space-y-8'>
@@ -1070,7 +1068,7 @@ const Profile = () => {
                   </div>
                 </div>
                 <button
-                  onClick={() => setIsBadgeModalOpen(true)}
+                  // onClick={() => setIsBadgeModalOpen(true)}
                   className='text-[#059669] text-xs font-bold hover:underline mb-2'
                 >
                   About Achievements & Badges

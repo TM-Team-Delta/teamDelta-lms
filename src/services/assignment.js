@@ -15,6 +15,12 @@ let assignmentsCache = null;
 const buildSubmissionFormData = (data = {}) => {
   const formData = new FormData();
 
+  if (data.lessonId) formData.append('lessonId', data.lessonId);
+  if (data.courseId) formData.append('courseId', data.courseId);
+  if (data.unitId) formData.append('unitId', data.unitId);
+  if (data.lessonIndex) formData.append('lessonIndex', data.lessonIndex);
+  if (data.title) formData.append('title', data.title);
+  if (data.description) formData.append('description', data.description);
   if (data.link) formData.append('link', data.link);
   if (data.file) formData.append('file', data.file);
 
@@ -35,7 +41,8 @@ export const assignmentService = {
   },
 
   getAssignments: async ({ force = false } = {}) => {
-    const cachedEntry = assignmentsCache || readSessionCache(ASSIGNMENTS_CACHE_KEY);
+    const cachedEntry =
+      assignmentsCache || readSessionCache(ASSIGNMENTS_CACHE_KEY);
 
     if (!force && isCacheEntryFresh(cachedEntry, ASSIGNMENTS_CACHE_TTL)) {
       assignmentsCache = cachedEntry;
@@ -64,7 +71,15 @@ export const assignmentService = {
   },
 
   submitAssignmentFromLesson: async (payload) => {
-    const response = await axiosInstance.post('/api/assignments/submit', payload);
+    const response = await axiosInstance.post(
+      '/api/assignments/submit',
+      buildSubmissionFormData(payload),
+      {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      }
+    );
     assignmentService.clearCache();
     return response.data;
   },
@@ -100,7 +115,10 @@ export const assignmentService = {
   },
 
   createAssignment: async (payload) => {
-    const response = await axiosInstance.post('/api/assignments/create', payload);
+    const response = await axiosInstance.post(
+      '/api/assignments/create',
+      payload
+    );
     assignmentService.clearCache();
     return response.data;
   },

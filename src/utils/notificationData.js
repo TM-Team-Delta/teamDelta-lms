@@ -137,10 +137,11 @@ const buildAchievementNotifications = ({
 export const buildGeneratedNotifications = ({
   courses = [],
   assignments = [],
+  progressByCourse = {},
   profile = null,
   now = new Date(),
 }) => {
-  const progressSnapshot = buildCourseProgressSnapshot(courses);
+  const progressSnapshot = buildCourseProgressSnapshot(courses, progressByCourse);
   const claimedCertificates = buildClaimedCertificates(courses);
 
   const deadlineNotifications = assignments

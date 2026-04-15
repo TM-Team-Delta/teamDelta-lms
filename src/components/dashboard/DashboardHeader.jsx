@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Search, Bell, MessageSquare, X, Flame, Menu } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../context/useAuth';
 import UserAvatar from '../common/UserAvatar';
 
 const DashboardHeader = ({ onMenuClick }) => {

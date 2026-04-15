@@ -1,86 +1,157 @@
-const COURSE_PROGRESS_KEY = 'trueminds-course-progress';
+import { getStoredCertificateClaim } from './courseCertificateState';
 
-const createDefaultProgress = () => ({
-  startedUnits: {},
-  completedUnits: {},
-  certificateClaim: null,
+const normalizeId = (value) => {
+  if (value === null || value === undefined) return '';
+  return String(value);
+};
+
+const asArray = (value) => {
+  if (Array.isArray(value)) return value;
+  if (!value) return [];
+  return [value];
+};
+
+const getLessonId = (lesson) =>
+  normalizeId(lesson?._id ?? lesson?.id ?? lesson?.lessonId);
+
+const getUnitLessons = (unit) =>
+  asArray(unit?.sections).flatMap((section) => asArray(section?.learnItems));
+
+const buildCompletedLessonSet = (progressRecord = {}) => {
+  const lessonIds = new Set();
+
+  const addValue = (value) => {
+    const normalized = normalizeId(value);
+    if (normalized) {
+      lessonIds.add(normalized);
+    }
+  };
+
+  const addItems = (items) => {
+    asArray(items).forEach((item) => {
+      if (typeof item === 'string' || typeof item === 'number') {
+        addValue(item);
+        return;
+      }
+
+      addValue(item?.lessonId ?? item?.id ?? item?._id);
+    });
+  };
+
+  addItems(progressRecord.completedLessonIds);
+  addItems(progressRecord.completedLessons);
+  addItems(progressRecord.lessonsCompleted);
+  addItems(progressRecord.progress?.completedLessonIds);
+  addItems(progressRecord.progress?.completedLessons);
+  addItems(progressRecord.progress?.lessonsCompleted);
+
+  return lessonIds;
+};
+
+const buildCompletedLessonEntries = (progressRecord = {}) => {
+  const entries = [];
+
+  const addItems = (items) => {
+    asArray(items).forEach((item) => {
+      if (!item || typeof item !== 'object') return;
+
+      const lessonId = normalizeId(item?.lessonId ?? item?.id ?? item?._id);
+
+      if (!lessonId) return;
+
+      entries.push({
+        lessonId,
+        completedAt: item?.completedAt || item?.updatedAt || item?.date || null,
+      });
+    });
+  };
+
+  addItems(progressRecord.completedLessons);
+  addItems(progressRecord.lessonsCompleted);
+  addItems(progressRecord.progress?.completedLessons);
+  addItems(progressRecord.progress?.lessonsCompleted);
+
+  return entries;
+};
+
+export const createEmptyProgressRecord = () => ({
+  completedLessonIds: [],
+  progressPercent: 0,
 });
 
-const canUseStorage = () => typeof window !== 'undefined' && window.localStorage;
+export const normalizeCourseProgress = (payload = {}) => {
+  const data = payload?.data ?? payload;
+  const completedLessonIds = [...buildCompletedLessonSet(data)];
 
-const readAllProgress = () => {
-  if (!canUseStorage()) return {};
+  const progressPercentCandidates = [
+    data?.progressPercent,
+    data?.overallProgress,
+    data?.completionRate,
+    data?.progress?.progressPercent,
+    data?.progress?.overallProgress,
+    data?.progress?.completionRate,
+  ];
 
-  try {
-    const raw = window.localStorage.getItem(COURSE_PROGRESS_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
-};
+  const progressPercent =
+    progressPercentCandidates.find(
+      (value) => typeof value === 'number' && !Number.isNaN(value)
+    ) || 0;
 
-const writeAllProgress = (value) => {
-  if (!canUseStorage()) return;
-
-  window.localStorage.setItem(COURSE_PROGRESS_KEY, JSON.stringify(value));
-};
-
-export const getAllStoredCourseProgress = () => readAllProgress();
-
-export const getStoredCourseProgress = (courseId) => {
-  const allProgress = readAllProgress();
-  return allProgress[courseId] || createDefaultProgress();
-};
-
-export const saveStoredCourseProgress = (courseId, progress) => {
-  const allProgress = readAllProgress();
-  allProgress[courseId] = progress;
-  writeAllProgress(allProgress);
+  return {
+    ...data,
+    completedLessonIds,
+    progressPercent,
+  };
 };
 
 export const getCourseUnitSequence = (course) => {
   if (!course?.courseOutline) return [];
 
-  return course.courseOutline.flatMap((module, moduleIndex) =>
-    (module.units || []).map((unit, unitIndex) => ({
-      moduleId: module.id,
-      moduleIndex,
-      moduleTitle: module.title,
-      unitId: unit.id,
-      unitIndex,
-      globalIndex: 0,
-      unit,
-    }))
-  ).map((item, index) => ({
-    ...item,
-    globalIndex: index,
-  }));
+  return course.courseOutline
+    .flatMap((module, moduleIndex) =>
+      asArray(module.units).map((unit, unitIndex) => ({
+        moduleId: module.id,
+        moduleIndex,
+        moduleTitle: module.title,
+        unitId: unit.id,
+        unitIndex,
+        globalIndex: 0,
+        unit,
+      }))
+    )
+    .map((item, index) => ({
+      ...item,
+      globalIndex: index,
+    }));
 };
 
-export const deriveCourseProgress = (course, progress) => {
-  const safeProgress = progress || createDefaultProgress();
+export const deriveCourseProgress = (course, progressRecord) => {
+  const safeProgress = progressRecord || createEmptyProgressRecord();
   const unitSequence = getCourseUnitSequence(course);
-  const startedUnits = safeProgress.startedUnits || {};
-  const completedUnits = safeProgress.completedUnits || {};
-  const certificateClaim = safeProgress.certificateClaim || null;
+  const completedLessons = buildCompletedLessonSet(safeProgress);
+  const completedLessonEntries = buildCompletedLessonEntries(safeProgress);
 
   let highestUnlockedIndex = 0;
-
-  unitSequence.forEach((item, index) => {
-    if (startedUnits[item.unitId] || completedUnits[item.unitId]) {
-      highestUnlockedIndex = Math.max(highestUnlockedIndex, index + 1);
-    }
-  });
-
   const statusByUnitId = {};
 
   unitSequence.forEach((item, index) => {
-    if (completedUnits[item.unitId]) {
+    const unitLessons = getUnitLessons(item.unit);
+    const lessonIds = unitLessons.map(getLessonId).filter(Boolean);
+    const completedLessonCount = lessonIds.filter((lessonId) =>
+      completedLessons.has(lessonId)
+    ).length;
+    const totalLessons = lessonIds.length;
+    const isCompleted = totalLessons > 0 && completedLessonCount === totalLessons;
+    const hasStarted = completedLessonCount > 0;
+
+    if (isCompleted) {
+      highestUnlockedIndex = Math.max(highestUnlockedIndex, index + 1);
       statusByUnitId[item.unitId] = 'completed';
       return;
     }
 
-    if (startedUnits[item.unitId]) {
+    if (hasStarted) {
+      highestUnlockedIndex = Math.max(highestUnlockedIndex, index);
       statusByUnitId[item.unitId] = 'in-progress';
       return;
     }
@@ -92,48 +163,55 @@ export const deriveCourseProgress = (course, progress) => {
     (item) => statusByUnitId[item.unitId] === 'completed'
   ).length;
 
-  const progressPercent = unitSequence.length
-    ? Math.round((completedCount / unitSequence.length) * 100)
-    : 0;
+  const lessonCounts = unitSequence.reduce(
+    (totals, item) => {
+      const lessonIds = getUnitLessons(item.unit).map(getLessonId).filter(Boolean);
+      const completedLessonCount = lessonIds.filter((lessonId) =>
+        completedLessons.has(lessonId)
+      ).length;
 
-  const startDates = Object.values(startedUnits).filter(Boolean).sort();
-  const completionDates = Object.values(completedUnits).filter(Boolean).sort();
+      totals.totalLessons += lessonIds.length;
+      totals.completedLessons += completedLessonCount;
+      return totals;
+    },
+    { totalLessons: 0, completedLessons: 0 }
+  );
+
+  const derivedPercent = lessonCounts.totalLessons
+    ? Math.round((lessonCounts.completedLessons / lessonCounts.totalLessons) * 100)
+    : 0;
+  const completionDates = completedLessonEntries
+    .map((item) => item.completedAt)
+    .filter(Boolean)
+    .sort();
 
   return {
     unitSequence,
     statusByUnitId,
     completedCount,
     totalUnits: unitSequence.length,
-    progressPercent,
-    certificateClaim,
-    courseStartDate: startDates[0] || null,
+    totalLessons: lessonCounts.totalLessons,
+    completedLessons: lessonCounts.completedLessons,
+    progressPercent: safeProgress.progressPercent || derivedPercent,
+    courseStartDate:
+      safeProgress.startedAt ||
+      safeProgress.progress?.startedAt ||
+      completionDates[0] ||
+      null,
     courseEndDate: completionDates[completionDates.length - 1] || null,
     isCourseCompleted:
       unitSequence.length > 0 && completedCount === unitSequence.length,
   };
 };
 
-export const updateCourseProgress = (courseId, updater) => {
-  const current = getStoredCourseProgress(courseId);
-  const next = updater({
-    startedUnits: { ...(current.startedUnits || {}) },
-    completedUnits: { ...(current.completedUnits || {}) },
-    certificateClaim: current.certificateClaim || null,
-  });
-
-  saveStoredCourseProgress(courseId, next);
-  return next;
-};
-
-export const buildCourseProgressSnapshot = (courses = []) => {
+export const buildCourseProgressSnapshot = (courses = [], progressByCourse = {}) => {
   const snapshots = courses.map((course) => {
-    const progress = deriveCourseProgress(course, getStoredCourseProgress(course.id));
+    const progress = deriveCourseProgress(course, progressByCourse[course.id]);
     const nextUnit =
-      progress.unitSequence.find(
-        (item) =>
-          progress.statusByUnitId[item.unitId] === 'in-progress' ||
-          progress.statusByUnitId[item.unitId] === 'available'
-      ) || progress.unitSequence[0];
+      progress.unitSequence.find((item) => {
+        const status = progress.statusByUnitId[item.unitId];
+        return status === 'in-progress' || status === 'available';
+      }) || progress.unitSequence[0];
 
     return {
       course,
@@ -153,7 +231,7 @@ export const buildCourseProgressSnapshot = (courses = []) => {
     : 0;
 
   const lessonsDone = snapshots.reduce(
-    (total, snapshot) => total + snapshot.progress.completedCount,
+    (total, snapshot) => total + snapshot.progress.completedLessons,
     0
   );
 
@@ -203,11 +281,10 @@ const formatWeekRange = (date = new Date()) => {
   return `${startMonth} ${start.getDate()} - ${endMonth} ${end.getDate()}`;
 };
 
-const isDateWithinRange = (value, rangeStart, rangeEnd) => {
-  if (!value) return false;
+const parseDate = (value) => {
+  if (!value) return null;
   const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return false;
-  return parsed >= rangeStart && parsed <= rangeEnd;
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
 const durationToMinutes = (value) => {
@@ -234,8 +311,8 @@ const durationToMinutes = (value) => {
   return 0;
 };
 
-export const buildUpcomingLessons = (courses = []) => {
-  const snapshot = buildCourseProgressSnapshot(courses);
+export const buildUpcomingLessons = (courses = [], progressByCourse = {}) => {
+  const snapshot = buildCourseProgressSnapshot(courses, progressByCourse);
 
   return snapshot.snapshots
     .filter((item) => item.nextUnit?.unit)
@@ -249,25 +326,41 @@ export const buildUpcomingLessons = (courses = []) => {
     .slice(0, 3);
 };
 
-export const buildWeeklyGoal = (courses = [], now = new Date()) => {
-  const snapshot = buildCourseProgressSnapshot(courses);
+export const buildWeeklyGoal = (
+  courses = [],
+  progressByCourse = {},
+  now = new Date()
+) => {
+  const snapshot = buildCourseProgressSnapshot(courses, progressByCourse);
   const weekStart = startOfWeek(now);
   const weekEnd = endOfWeek(now);
 
   const weeklyProgress = snapshot.snapshots.reduce(
     (total, item) => {
-      const progress = getStoredCourseProgress(item.course.id);
-      const completedUnits = progress.completedUnits || {};
+      const completedLessons = asArray(
+        progressByCourse[item.course.id]?.completedLessons ||
+          progressByCourse[item.course.id]?.lessonsCompleted
+      );
 
-      item.progress.unitSequence.forEach((entry) => {
-        const completedAt = completedUnits[entry.unitId];
+      completedLessons.forEach((lesson) => {
+        const completedAt = parseDate(
+          lesson?.completedAt || lesson?.updatedAt || lesson?.date
+        );
 
-        if (!isDateWithinRange(completedAt, weekStart, weekEnd)) {
+        if (!completedAt || completedAt < weekStart || completedAt > weekEnd) {
           return;
         }
 
         total.completedLessons += 1;
-        total.minutesSpent += durationToMinutes(entry.unit?.lessonPage?.time);
+
+        const lessonId = getLessonId(lesson);
+        item.progress.unitSequence.forEach((entry) => {
+          getUnitLessons(entry.unit).forEach((unitLesson) => {
+            if (getLessonId(unitLesson) === lessonId) {
+              total.minutesSpent += durationToMinutes(unitLesson?.duration);
+            }
+          });
+        });
       });
 
       return total;
@@ -296,35 +389,13 @@ export const buildWeeklyGoal = (courses = [], now = new Date()) => {
   };
 };
 
-export const buildClaimedCertificates = (courses = []) =>
-  courses
-    .map((course) => {
-      const progress = deriveCourseProgress(course, getStoredCourseProgress(course.id));
-      const claim = progress.certificateClaim;
-
-      if (!claim) return null;
-
-      return {
-        id: `local-${course.id}`,
-        title: course.title,
-        name: course.title,
-        mentor: course.mentorName,
-        instructorName: course.mentorName,
-        completedAt: claim.claimedAt || progress.courseEndDate || progress.courseStartDate,
-        issuedAt: claim.claimedAt || progress.courseEndDate || progress.courseStartDate,
-        source: 'local',
-        claim,
-      };
-    })
-    .filter(Boolean);
-
 export const buildMilestones = ({
   enrolledCourses = [],
   progressSnapshot,
   assignmentSummary,
 }) => {
   const snapshot =
-    progressSnapshot || buildCourseProgressSnapshot(enrolledCourses);
+    progressSnapshot || buildCourseProgressSnapshot(enrolledCourses, {});
   const enrolledCount = enrolledCourses.length;
   const lessonsDone = snapshot.lessonsDone;
   const submittedAssignments = assignmentSummary?.submitted || 0;
@@ -389,3 +460,24 @@ export const buildMilestones = ({
     },
   ];
 };
+
+export const buildClaimedCertificates = (courses = []) =>
+  courses
+    .map((course) => {
+      const claim = getStoredCertificateClaim(course.id);
+
+      if (!claim) return null;
+
+      return {
+        id: `local-${course.id}`,
+        title: course.title,
+        name: course.title,
+        mentor: course.mentorName,
+        instructorName: course.mentorName,
+        completedAt: claim.claimedAt || null,
+        issuedAt: claim.claimedAt || null,
+        source: 'local',
+        claim,
+      };
+    })
+    .filter(Boolean);

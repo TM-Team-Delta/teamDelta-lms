@@ -3,18 +3,12 @@ import { BookOpen, Clock, MoreHorizontal } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import TrackProgressSkeleton from '../../components/trackprogress/TrackProgressSkeleton';
 import { coursesService } from '../../services/courses';
+import { trackProgressService } from '../../services/trackProgressService';
 import { normalizeCourseList } from '../../utils/courseApi';
 import { buildCourseProgressSnapshot } from '../../utils/courseProgress';
-import {
-  createTimedCacheEntry,
-  readSessionCache,
-  writeSessionCache,
-} from '../../utils/sessionCache';
 
-const TRACK_PROGRESS_CACHE_KEY = 'trueminds-track-progress-view';
-
-const buildTrackProgressView = (courses = []) => {
-  const snapshot = buildCourseProgressSnapshot(courses);
+const buildTrackProgressView = (courses = [], progressByCourse = {}) => {
+  const snapshot = buildCourseProgressSnapshot(courses, progressByCourse);
 
   return {
     overview: {
@@ -31,31 +25,16 @@ const buildTrackProgressView = (courses = []) => {
 };
 
 const TrackProgress = () => {
-  const cachedView = readSessionCache(TRACK_PROGRESS_CACHE_KEY)?.data;
-  const [overview, setOverview] = useState(cachedView?.overview || null);
-  const [courses, setCourses] = useState(cachedView?.courses || []);
-  const [loading, setLoading] = useState(() => !cachedView);
+  const [overview, setOverview] = useState(null);
+  const [courses, setCourses] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     const fetchProgress = async () => {
       try {
-        const cached = coursesService.peekEnrolledCourses();
-
-        if (cached) {
-          const cachedCourses = normalizeCourseList(cached);
-          const cachedViewData = buildTrackProgressView(cachedCourses);
-
-          setOverview(cachedViewData.overview);
-          setCourses(cachedViewData.courses);
-          setLoading(false);
-          writeSessionCache(
-            TRACK_PROGRESS_CACHE_KEY,
-            createTimedCacheEntry(cachedViewData)
-          );
-        } else {
-          setLoading(true);
-        }
+        setError(null);
+        setLoading(true);
 
         const response = await coursesService.getEnrolledCourses();
         const enrolledCourses = normalizeCourseList(response);
@@ -71,17 +50,19 @@ const TrackProgress = () => {
                 normalizeCourseList({ data: [item?.data || item] })[0]
               )
             : enrolledCourses;
-        const nextViewData = buildTrackProgressView(detailedEnrolledCourses);
+        const progressByCourse = await trackProgressService.getProgressByCourseIds(
+          detailedEnrolledCourses.map((course) => course.id)
+        );
+        const nextViewData = buildTrackProgressView(
+          detailedEnrolledCourses,
+          progressByCourse
+        );
 
         setOverview(nextViewData.overview);
         setCourses(nextViewData.courses);
-        writeSessionCache(
-          TRACK_PROGRESS_CACHE_KEY,
-          createTimedCacheEntry(nextViewData)
-        );
-      } catch (err) {
-        console.error(err);
-        setError(err.response?.data?.message || 'Failed to load progress');
+      } catch (requestError) {
+        console.error(requestError);
+        setError(requestError.response?.data?.message || 'Failed to load progress');
       } finally {
         setLoading(false);
       }
@@ -111,8 +92,8 @@ const TrackProgress = () => {
           </div>
 
           <div className='grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3'>
-            {courses.map((course, i) => (
-              <div key={course.id || i} className='overflow-hidden rounded-2xl border bg-white'>
+            {courses.map((course, index) => (
+              <div key={course.id || index} className='overflow-hidden rounded-2xl border bg-white'>
                 <div className='relative flex h-28 items-center justify-center bg-gray-100'>
                   <MoreHorizontal
                     className='absolute right-3 top-3 text-gray-400'
@@ -144,7 +125,7 @@ const TrackProgress = () => {
                   <div className='flex items-center justify-between'>
                     <span className='flex items-center gap-1 text-xs'>
                       <Clock size={12} />
-                      Local progress
+                      Synced with your account
                     </span>
                     <Link
                       to={course.courseLink}

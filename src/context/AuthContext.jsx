@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { assignmentService } from '../services/assignment';
 import { authService } from '../services/auth';
 import { certificateService } from '../services/certificate';
@@ -7,23 +7,8 @@ import { dashboardService } from '../services/dashboard';
 import { notificationsService } from '../services/notifications';
 import { teamService } from '../services/team';
 import { usersService } from '../services/users';
-import { setFallbackAssignmentsScope } from '../utils/assignmentData';
-import {
-  getStoredProfilePhoto,
-  resolveProfilePhotoScope,
-  setStoredProfilePhoto,
-} from '../utils/profilePhotoStorage';
+import { AuthContext } from './auth-context';
 import { clearSessionCacheByPrefix } from '../utils/sessionCache';
-
-const AuthContext = createContext(null);
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
-  return context;
-};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
@@ -31,22 +16,13 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [profile, setProfile] = useState(null);
 
-  const fetchProfile = async (userScope) => {
+  const fetchProfile = async () => {
     try {
       const response = await usersService.getProfile();
-      const scope = resolveProfilePhotoScope(userScope || response.data || user);
-      const storedProfilePhoto = getStoredProfilePhoto(scope);
-      const mergedProfile = {
+      setProfile({
         ...response.data,
-        profilePhotoUrl:
-          response.data?.profilePhotoUrl || storedProfilePhoto || '',
-      };
-
-      if (mergedProfile.profilePhotoUrl) {
-        setStoredProfilePhoto(scope, mergedProfile.profilePhotoUrl);
-      }
-
-      setProfile(mergedProfile);
+        profilePhotoUrl: response.data?.profilePhotoUrl || '',
+      });
     } catch (error) {
       console.error('Failed to fetch profile:', error);
     }
@@ -62,10 +38,7 @@ export const AuthProvider = ({ children }) => {
           if (response.success && response.data?.user) {
             setUser(response.data.user);
             setIsAuthenticated(true);
-            setFallbackAssignmentsScope(
-              response.data.user?.id || response.data.user?.email || 'guest'
-            );
-            await fetchProfile(response.data.user);
+            await fetchProfile();
           } else {
             // Token might be invalid
             handleLogout();
@@ -94,10 +67,7 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem('refreshToken', response.data.refreshToken);
         setUser(response.data.user);
         setIsAuthenticated(true);
-        setFallbackAssignmentsScope(
-          response.data.user?.id || response.data.user?.email || 'guest'
-        );
-        await fetchProfile(response.data.user);
+        await fetchProfile();
         return { success: true };
       }
 
@@ -160,8 +130,7 @@ export const AuthProvider = ({ children }) => {
           localStorage.setItem('refreshToken', refreshToken);
           setUser(nextUser);
           setIsAuthenticated(true);
-          setFallbackAssignmentsScope(nextUser?.id || nextUser?.email || 'guest');
-          await fetchProfile(nextUser);
+          await fetchProfile();
 
           return {
             ...response,
@@ -215,7 +184,6 @@ export const AuthProvider = ({ children }) => {
     notificationsService.clearCache?.();
     teamService.clearCache?.();
     assignmentService.clearCache?.();
-    setFallbackAssignmentsScope('guest');
     clearSessionCacheByPrefix('trueminds-');
     setUser(null);
     setProfile(null);
@@ -231,10 +199,7 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem('refreshToken', response.data.refreshToken);
         setUser(response.data.user);
         setIsAuthenticated(true);
-        setFallbackAssignmentsScope(
-          response.data.user?.id || response.data.user?.email || 'guest'
-        );
-        await fetchProfile(response.data.user);
+        await fetchProfile();
         return { success: true };
       }
       return { success: false, message: response.message || 'Google Login failed' };
@@ -260,7 +225,6 @@ export const AuthProvider = ({ children }) => {
     };
     setUser(mockUser);
     setIsAuthenticated(true);
-    setFallbackAssignmentsScope(mockUser.id || mockUser.email || 'guest');
     // Setting a fake token so initial check on refresh might pass (though getMe will fail)
     localStorage.setItem('accessToken', 'mock-token');
     setIsLoading(false);

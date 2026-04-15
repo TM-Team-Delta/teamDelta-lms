@@ -58,8 +58,7 @@ const CourseUnitDetail = () => {
     loadCourse();
   }, [courseId]);
 
-  const { statusByUnitId, isCourseCompleted, startUnit } =
-    useCourseProgress(course);
+  const { statusByUnitId, isCourseCompleted } = useCourseProgress(course);
 
   const module = useMemo(() => {
     if (!course) return null;
@@ -91,13 +90,6 @@ const CourseUnitDetail = () => {
   const unitStatus = currentUnit
     ? statusByUnitId[currentUnit.id] || 'locked'
     : 'locked';
-
-  useEffect(() => {
-    if (!currentUnit) return;
-    if (unitStatus === 'available') {
-      startUnit(currentUnit.id);
-    }
-  }, [currentUnit, startUnit, unitStatus]);
 
   if (isLoading) {
     return <CoursePageSkeleton compact />;

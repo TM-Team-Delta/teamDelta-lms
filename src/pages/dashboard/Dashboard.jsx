@@ -12,6 +12,7 @@ import UpcomingLessonsCard from '../../components/dashboard/UpcomingLessonsCard'
 import { assignmentService } from '../../services/assignment';
 import { dashboardService } from '../../services/dashboard';
 import { coursesService } from '../../services/courses';
+import { trackProgressService } from '../../services/trackProgressService';
 import DashboardSkeleton from '../../components/dashboard/DashboardSkeleton';
 import { buildMergedAssignments } from '../../utils/assignmentData';
 import { normalizeCourseList } from '../../utils/courseApi';
@@ -117,11 +118,18 @@ const buildReminders = ({
 const buildDashboardViewData = (
   dashboardResponse,
   detailedEnrolledCourses,
-  assignments = []
+  assignments = [],
+  progressByCourse = {}
 ) => {
-  const progressSnapshot = buildCourseProgressSnapshot(detailedEnrolledCourses);
-  const upcomingLessons = buildUpcomingLessons(detailedEnrolledCourses);
-  const weeklyGoal = buildWeeklyGoal(detailedEnrolledCourses);
+  const progressSnapshot = buildCourseProgressSnapshot(
+    detailedEnrolledCourses,
+    progressByCourse
+  );
+  const upcomingLessons = buildUpcomingLessons(
+    detailedEnrolledCourses,
+    progressByCourse
+  );
+  const weeklyGoal = buildWeeklyGoal(detailedEnrolledCourses, progressByCourse);
 
   const currentCourses = progressSnapshot.snapshots.map((snapshot) => ({
     courseId: snapshot.course.id,
@@ -237,10 +245,15 @@ const Dashboard = () => {
             assignmentsPayload: cachedAssignments || { data: [] },
             courses: cachedDetailedCourses,
           });
+          const cachedProgressByCourse =
+            await trackProgressService.getProgressByCourseIds(
+              cachedDetailedCourses.map((course) => course.id)
+            );
           const cachedViewData = buildDashboardViewData(
             cachedDashboardResponse,
             cachedDetailedCourses,
-            cachedAssignmentSummary.assignments
+            cachedAssignmentSummary.assignments,
+            cachedProgressByCourse
           );
 
           setDashboardData(cachedViewData);
@@ -272,6 +285,9 @@ const Dashboard = () => {
                 normalizeCourseList({ data: [response?.data || response] })[0]
               )
             : enrolledCourses;
+        const progressByCourse = await trackProgressService.getProgressByCourseIds(
+          detailedEnrolledCourses.map((course) => course.id)
+        );
         const assignmentSummary = buildMergedAssignments({
           assignmentsPayload: assignmentsResponse,
           courses: detailedEnrolledCourses,
@@ -279,7 +295,8 @@ const Dashboard = () => {
         const nextDashboardData = buildDashboardViewData(
           dashboardResponse,
           detailedEnrolledCourses,
-          assignmentSummary.assignments
+          assignmentSummary.assignments,
+          progressByCourse
         );
 
         if (assignmentSummary?.summary) {
@@ -289,7 +306,10 @@ const Dashboard = () => {
           };
           nextDashboardData.milestones = buildMilestones({
             enrolledCourses: detailedEnrolledCourses,
-            progressSnapshot: buildCourseProgressSnapshot(detailedEnrolledCourses),
+            progressSnapshot: buildCourseProgressSnapshot(
+              detailedEnrolledCourses,
+              progressByCourse
+            ),
             assignmentSummary: assignmentSummary.summary,
           });
         }
