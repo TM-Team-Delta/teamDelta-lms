@@ -1,16 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useLocation, Navigate } from 'react-router-dom';
-import { useAuth } from '../../context/AuthContext';
+import { useAuth } from '../../context/useAuth';
+
+const OTP_LENGTH = 6;
 
 const VerifyEmail = () => {
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [otp, setOtp] = useState(() => Array(OTP_LENGTH).fill(''));
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
-  
-  const inputRefs = [
-    useRef(null), useRef(null), useRef(null),
-    useRef(null), useRef(null), useRef(null)
-  ];
+
+  // Keep one stable ref array so the effect and handlers do not recreate it.
+  const inputRefs = useRef([]);
   const navigate = useNavigate();
   const location = useLocation();
   const { verifyEmail, resendVerification, login, isLoading } = useAuth();
@@ -20,7 +20,7 @@ const VerifyEmail = () => {
 
   /* auto focus first input on mount */
   useEffect(() => {
-    inputRefs[0].current?.focus();
+    inputRefs.current[0]?.focus();
   }, []);
 
   if (!email) {
@@ -37,15 +37,15 @@ const VerifyEmail = () => {
     setOtp(newOtp);
 
     /* move to next input if value is entered */
-    if (value && index < 5) {
-      inputRefs[index + 1].current?.focus();
+    if (value && index < OTP_LENGTH - 1) {
+      inputRefs.current[index + 1]?.focus();
     }
   };
 
   const handleKeyDown = (index, e) => {
     /* move to previous input on backspace if current is empty */
     if (e.key === 'Backspace' && !otp[index] && index > 0) {
-      inputRefs[index - 1].current?.focus();
+      inputRefs.current[index - 1]?.focus();
     }
   };
 
@@ -55,7 +55,7 @@ const VerifyEmail = () => {
     setError('');
     setMessage('');
     
-    if (code.length === 6) {
+    if (code.length === OTP_LENGTH) {
       const result = await verifyEmail(email, code);
       if (result.success) {
         if (result.authenticated) {
@@ -122,7 +122,9 @@ const VerifyEmail = () => {
           {otp.map((digit, index) => (
             <input
               key={index}
-              ref={inputRefs[index]}
+              ref={(element) => {
+                inputRefs.current[index] = element;
+              }}
               type='text'
               inputMode='numeric'
               maxLength={1}

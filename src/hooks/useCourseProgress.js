@@ -1,95 +1,121 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { trackProgressService } from '../services/trackProgressService';
 import {
+  createEmptyProgressRecord,
   deriveCourseProgress,
-  getStoredCourseProgress,
-  updateCourseProgress,
+  normalizeCourseProgress,
 } from '../utils/courseProgress';
+import {
+  getStoredCertificateClaim,
+  saveStoredCertificateClaim,
+} from '../utils/courseCertificateState';
 
 const emptyProgress = {
   unitSequence: [],
   statusByUnitId: {},
   completedCount: 0,
   totalUnits: 0,
+  totalLessons: 0,
+  completedLessons: 0,
   progressPercent: 0,
   isCourseCompleted: false,
 };
 
 const useCourseProgress = (course) => {
-  const [storedProgress, setStoredProgress] = useState(() =>
-    course?.id ? getStoredCourseProgress(course.id) : null
-  );
+  const [progressRecord, setProgressRecord] = useState(createEmptyProgressRecord);
+  const [certificateClaim, setCertificateClaim] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  useEffect(() => {
+  const refreshProgress = useCallback(async () => {
     if (!course?.id) {
-      setStoredProgress(null);
-      return;
+      setProgressRecord(createEmptyProgressRecord());
+      setCertificateClaim(null);
+      return createEmptyProgressRecord();
     }
 
-    setStoredProgress(getStoredCourseProgress(course.id));
+    setIsLoading(true);
+    setError('');
+
+    try {
+      const response = await trackProgressService.getCourseProgress(course.id);
+      const normalizedProgress = normalizeCourseProgress(response);
+      setProgressRecord(normalizedProgress);
+      setCertificateClaim(getStoredCertificateClaim(course.id));
+      return normalizedProgress;
+    } catch (requestError) {
+      console.error('Failed to load course progress:', requestError);
+      setError(
+        requestError.response?.data?.message || 'Failed to load course progress.'
+      );
+      setProgressRecord(createEmptyProgressRecord());
+      setCertificateClaim(getStoredCertificateClaim(course.id));
+      return createEmptyProgressRecord();
+    } finally {
+      setIsLoading(false);
+    }
   }, [course?.id]);
+
+  useEffect(() => {
+    refreshProgress();
+  }, [refreshProgress]);
 
   const derivedProgress = useMemo(() => {
     if (!course?.id) return emptyProgress;
-    return deriveCourseProgress(course, storedProgress);
-  }, [course, storedProgress]);
+    return deriveCourseProgress(course, progressRecord);
+  }, [course, progressRecord]);
 
-  const startUnit = (unitId) => {
-    if (!course?.id || !unitId) return;
+  const completeLesson = useCallback(
+    async (lessonId) => {
+      if (!lessonId) return { success: false, message: 'Lesson id is required.' };
 
-    setStoredProgress(
-      updateCourseProgress(course.id, (existingProgress) => {
-        const startedUnits = {
-          ...(existingProgress.startedUnits || {}),
-        };
+      setIsSubmitting(true);
+      setError('');
 
-        if (!startedUnits[unitId]) {
-          startedUnits[unitId] = new Date().toISOString();
-        }
+      try {
+        await trackProgressService.markLessonComplete(lessonId);
+        await refreshProgress();
+        return { success: true };
+      } catch (requestError) {
+        console.error('Failed to mark lesson as complete:', requestError);
+        const message =
+          requestError.response?.data?.message ||
+          'Failed to mark lesson as complete.';
+        setError(message);
+        return { success: false, message };
+      } finally {
+        setIsSubmitting(false);
+      }
+    },
+    [refreshProgress]
+  );
 
-        return {
-          ...existingProgress,
-          startedUnits,
-        };
-      })
-    );
-  };
+  const claimCertificate = useCallback(
+    (claimValues) => {
+      if (!course?.id) return;
 
-  const completeUnit = (unitId) => {
-    if (!course?.id || !unitId) return;
+      // Certificate claiming is still local because there is no matching backend flow yet.
+      const nextClaim = {
+        ...claimValues,
+        claimedAt: new Date().toISOString(),
+      };
 
-    setStoredProgress(
-      updateCourseProgress(course.id, (existingProgress) => ({
-        startedUnits: {
-          ...(existingProgress.startedUnits || {}),
-          [unitId]:
-            existingProgress.startedUnits?.[unitId] || new Date().toISOString(),
-        },
-        completedUnits: {
-          ...(existingProgress.completedUnits || {}),
-          [unitId]: new Date().toISOString(),
-        },
-      }))
-    );
-  };
-
-  const claimCertificate = (claimValues) => {
-    if (!course?.id) return;
-
-    setStoredProgress(
-      updateCourseProgress(course.id, (existingProgress) => ({
-        ...existingProgress,
-        certificateClaim: {
-          ...claimValues,
-          claimedAt: new Date().toISOString(),
-        },
-      }))
-    );
-  };
+      saveStoredCertificateClaim(course.id, nextClaim);
+      setCertificateClaim(nextClaim);
+    },
+    [course?.id]
+  );
 
   return {
     ...derivedProgress,
-    startUnit,
-    completeUnit,
+    completedLessonIds: progressRecord.completedLessonIds || [],
+    certificateClaim,
+    isLoading,
+    isSubmitting,
+    error,
+    refreshProgress,
+    completeLesson,
     claimCertificate,
   };
 };

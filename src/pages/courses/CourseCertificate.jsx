@@ -81,8 +81,6 @@ const CourseCertificate = () => {
     statusByUnitId,
     isCourseCompleted,
     certificateClaim,
-    courseStartDate,
-    courseEndDate,
     claimCertificate,
   } = useCourseProgress(course);
 
@@ -118,8 +116,8 @@ const CourseCertificate = () => {
     const certificateAsset = await buildCertificateAsset({
       learnerName: certificateClaim.fullName,
       courseTitle: course.title,
-      startDate: courseStartDate,
-      endDate: courseEndDate || certificateClaim.claimedAt,
+      startDate: null,
+      endDate: certificateClaim.claimedAt,
     });
 
     downloadAsset(certificateAsset);
