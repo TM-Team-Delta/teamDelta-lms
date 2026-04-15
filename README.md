@@ -14,6 +14,8 @@ TalentFlow LMS provides a single platform where users can:
 
 The goal is to replace scattered tools with one clean, focused system.
 
+🔗 **Live App:** https://team-delta-lms.vercel.app/
+
 ---
 
 ## 🧩 Features
@@ -63,14 +65,5 @@ The goal is to replace scattered tools with one clean, focused system.
 **Frontend**
 - React  
 - Tailwind CSS (v5)
-
-**Backend**
-- Node.js  
-- Express  
-
-**Database**
-- MongoDB  
-
----
 
 ## 📁 Project Structure
