@@ -21,20 +21,36 @@ const emptyProgress = {
   isCourseCompleted: false,
 };
 
+const progressSnapshotCache = new Map();
+
+const getCachedSnapshot = (courseId) => {
+  if (!courseId) return null;
+  return progressSnapshotCache.get(String(courseId)) || null;
+};
+
 const useCourseProgress = (course) => {
-  const [progressRecord, setProgressRecord] = useState(createEmptyProgressRecord);
+  const cachedSnapshot = getCachedSnapshot(course?.id);
+  const [progressRecord, setProgressRecord] = useState(
+    () => cachedSnapshot?.progressRecord || createEmptyProgressRecord()
+  );
   const [certificateClaim, setCertificateClaim] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [hasResolvedProgress, setHasResolvedProgress] = useState(Boolean(cachedSnapshot));
+  const [lastResolvedProgress, setLastResolvedProgress] = useState(
+    () => cachedSnapshot?.derivedProgress || emptyProgress
+  );
 
   const refreshProgress = useCallback(async () => {
     if (!course?.id) {
       setProgressRecord(createEmptyProgressRecord());
       setCertificateClaim(null);
+      setHasResolvedProgress(true);
       return createEmptyProgressRecord();
     }
 
+    setHasResolvedProgress(false);
     setIsLoading(true);
     setError('');
 
@@ -53,18 +69,65 @@ const useCourseProgress = (course) => {
       setCertificateClaim(getStoredCertificateClaim(course.id));
       return createEmptyProgressRecord();
     } finally {
+      setHasResolvedProgress(true);
       setIsLoading(false);
     }
   }, [course?.id]);
 
   useEffect(() => {
+    const nextCachedSnapshot = getCachedSnapshot(course?.id);
+
+    if (!course?.id) {
+      setProgressRecord(createEmptyProgressRecord());
+      setLastResolvedProgress(emptyProgress);
+      setHasResolvedProgress(false);
+      return;
+    }
+
+    if (nextCachedSnapshot) {
+      setProgressRecord(nextCachedSnapshot.progressRecord);
+      setLastResolvedProgress(nextCachedSnapshot.derivedProgress);
+      setHasResolvedProgress(true);
+    } else {
+      setProgressRecord(createEmptyProgressRecord());
+      setLastResolvedProgress(emptyProgress);
+      setHasResolvedProgress(false);
+    }
+
     refreshProgress();
-  }, [refreshProgress]);
+  }, [course?.id, refreshProgress]);
 
   const derivedProgress = useMemo(() => {
     if (!course?.id) return emptyProgress;
     return deriveCourseProgress(course, progressRecord);
   }, [course, progressRecord]);
+
+  useEffect(() => {
+    if (hasResolvedProgress) {
+      setLastResolvedProgress(derivedProgress);
+      if (course?.id) {
+        progressSnapshotCache.set(String(course.id), {
+          progressRecord,
+          derivedProgress,
+        });
+      }
+    }
+  }, [course?.id, derivedProgress, hasResolvedProgress, progressRecord]);
+
+  const stableProgress = useMemo(() => {
+    if (hasResolvedProgress) {
+      return derivedProgress;
+    }
+
+    if (lastResolvedProgress.unitSequence.length > 0) {
+      return lastResolvedProgress;
+    }
+
+    return emptyProgress;
+  }, [derivedProgress, hasResolvedProgress, lastResolvedProgress]);
+
+  const hasProgressSnapshot =
+    hasResolvedProgress || lastResolvedProgress.unitSequence.length > 0;
 
   const completeLesson = useCallback(
     async (lessonId) => {
@@ -108,10 +171,12 @@ const useCourseProgress = (course) => {
   );
 
   return {
-    ...derivedProgress,
+    ...stableProgress,
     completedLessonIds: progressRecord.completedLessonIds || [],
     certificateClaim,
     isLoading,
+    hasResolvedProgress,
+    hasProgressSnapshot,
     isSubmitting,
     error,
     refreshProgress,

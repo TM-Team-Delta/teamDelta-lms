@@ -58,7 +58,12 @@ const CourseUnitDetail = () => {
     loadCourse();
   }, [courseId]);
 
-  const { statusByUnitId, isCourseCompleted } = useCourseProgress(course);
+  const {
+    statusByUnitId,
+    isCourseCompleted,
+    hasResolvedProgress,
+    hasProgressSnapshot,
+  } = useCourseProgress(course);
 
   const module = useMemo(() => {
     if (!course) return null;
@@ -88,7 +93,9 @@ const CourseUnitDetail = () => {
   }, [currentUnitIndex, module]);
 
   const unitStatus = currentUnit
-    ? statusByUnitId[currentUnit.id] || 'locked'
+    ? hasProgressSnapshot
+      ? statusByUnitId[currentUnit.id] || 'locked'
+      : currentUnit.status || 'available'
     : 'locked';
 
   if (isLoading) {
@@ -121,7 +128,7 @@ const CourseUnitDetail = () => {
     );
   }
 
-  if (unitStatus === 'locked') {
+  if (hasResolvedProgress && unitStatus === 'locked') {
     return (
       <section className='space-y-6 p-4 pt-0 sm:p-5 sm:pt-0 md:p-6 md:pt-0'>
         <div className='rounded-2xl bg-white p-8 text-center'>
@@ -140,6 +147,7 @@ const CourseUnitDetail = () => {
       activeModuleId={module.id}
       activeUnitId={currentUnit.id}
       statusByUnitId={statusByUnitId}
+      hasResolvedProgress={hasProgressSnapshot}
       isCourseCompleted={isCourseCompleted}
     />
   );

@@ -34,6 +34,7 @@ const CourseLearningSidebar = ({
   activeUnitId,
   isCertificatePage = false,
   statusByUnitId,
+  hasResolvedProgress = false,
   isCourseCompleted,
 }) => {
   return (
@@ -55,7 +56,9 @@ const CourseLearningSidebar = ({
             </p>
             <div className='space-y-2'>
               {module.units.map((unit, unitIndex) => {
-                const unitStatus = statusByUnitId[unit.id] || 'locked';
+                const unitStatus = hasResolvedProgress
+                  ? statusByUnitId[unit.id] || 'locked'
+                  : unit.status || 'available';
                 const isActive =
                   activeModuleId === module.id && activeUnitId === unit.id;
                 const unitLink = getUnitLink(course.id, module.id, unitIndex);
