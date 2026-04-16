@@ -27,14 +27,17 @@ const useCourseProgress = (course) => {
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [hasResolvedProgress, setHasResolvedProgress] = useState(false);
 
   const refreshProgress = useCallback(async () => {
     if (!course?.id) {
       setProgressRecord(createEmptyProgressRecord());
       setCertificateClaim(null);
+      setHasResolvedProgress(true);
       return createEmptyProgressRecord();
     }
 
+    setHasResolvedProgress(false);
     setIsLoading(true);
     setError('');
 
@@ -53,11 +56,13 @@ const useCourseProgress = (course) => {
       setCertificateClaim(getStoredCertificateClaim(course.id));
       return createEmptyProgressRecord();
     } finally {
+      setHasResolvedProgress(true);
       setIsLoading(false);
     }
   }, [course?.id]);
 
   useEffect(() => {
+    setHasResolvedProgress(false);
     refreshProgress();
   }, [refreshProgress]);
 
@@ -112,6 +117,7 @@ const useCourseProgress = (course) => {
     completedLessonIds: progressRecord.completedLessonIds || [],
     certificateClaim,
     isLoading,
+    hasResolvedProgress,
     isSubmitting,
     error,
     refreshProgress,

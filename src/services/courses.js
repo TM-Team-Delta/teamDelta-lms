@@ -36,10 +36,51 @@ const writeEnrolledIds = (ids) => {
   window.localStorage.setItem(ENROLLED_CACHE_KEY, JSON.stringify([...ids]));
 };
 
+const collectCourseIdentifiers = (course) => {
+  if (!course || typeof course !== 'object') return [];
+
+  return [
+    course._id,
+    course.id,
+    course.courseId,
+    course.slug,
+    course.course?.id,
+    course.course?._id,
+    course.data?.id,
+    course.data?._id,
+  ]
+    .filter(Boolean)
+    .map((value) => String(value));
+};
+
 const addEnrolledId = (courseId) => {
   const ids = readEnrolledIds();
   ids.add(String(courseId));
   writeEnrolledIds(ids);
+};
+
+const addEnrolledIdentifiers = (...courses) => {
+  const ids = readEnrolledIds();
+
+  courses.forEach((course) => {
+    collectCourseIdentifiers(course).forEach((identifier) => ids.add(identifier));
+  });
+
+  writeEnrolledIds(ids);
+};
+
+const markCourseAsEnrolled = (course) => {
+  if (!course || typeof course !== 'object') return course;
+
+  return {
+    ...course,
+    isEnrolled: true,
+    enrolled: true,
+    enrollment: {
+      ...(course.enrollment || {}),
+      isEnrolled: true,
+    },
+  };
 };
 
 const applyLocalEnrollment = (payload) => {
@@ -50,19 +91,22 @@ const applyLocalEnrollment = (payload) => {
     return {
       ...payload,
       data: data.map((course) =>
-        ids.has(String(course?.id ?? course?._id))
-          ? { ...course, isEnrolled: true }
+        collectCourseIdentifiers(course).some((identifier) => ids.has(identifier))
+          ? markCourseAsEnrolled(course)
           : course
       ),
     };
   }
 
   if (data && typeof data === 'object') {
-    const resolvedId = String(data?.id ?? data?._id ?? '');
-    if (ids.has(resolvedId)) {
+    const isEnrolledLocally = collectCourseIdentifiers(data).some((identifier) =>
+      ids.has(identifier)
+    );
+
+    if (isEnrolledLocally) {
       return {
         ...payload,
-        data: { ...data, isEnrolled: true },
+        data: markCourseAsEnrolled(data),
       };
     }
   }
@@ -197,16 +241,15 @@ export const coursesService = {
   enrollInCourse: async (courseId) => {
     const response = await axiosInstance.post(`/api/courses/${courseId}/enroll`);
     addEnrolledId(courseId);
+    addEnrolledIdentifiers(response?.data?.data, response?.data);
 
     const cachedCourseEntry =
       memoryCache.courseById.get(courseId) || loadSessionCache(getCourseCacheKey(courseId));
     if (cachedCourseEntry?.data?.data) {
+      addEnrolledIdentifiers(cachedCourseEntry.data.data);
       const updatedCourseEntry = createCacheEntry({
         ...cachedCourseEntry.data,
-        data: {
-          ...cachedCourseEntry.data.data,
-          isEnrolled: true,
-        },
+        data: markCourseAsEnrolled(cachedCourseEntry.data.data),
       });
       memoryCache.courseById.set(courseId, updatedCourseEntry);
       saveSessionCache(getCourseCacheKey(courseId), updatedCourseEntry);

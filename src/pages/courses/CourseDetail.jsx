@@ -73,6 +73,8 @@ const CourseDetail = () => {
       await coursesService.enrollInCourse(course.id);
       setCourse((currentCourse) => ({
         ...currentCourse,
+        isEnrolled: true,
+        enrolled: true,
         enrollment: {
           ...currentCourse.enrollment,
           status: 'enrolled',

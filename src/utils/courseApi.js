@@ -76,7 +76,12 @@ const asArray = (value) => {
 };
 
 const getId = (value, fallback) => {
-  const resolved = value?._id ?? value?.id ?? value?.courseId ?? value?.unitId ?? value?.lessonId;
+  const resolved =
+    value?._id ??
+    value?.id ??
+    value?.lessonId ??
+    value?.unitId ??
+    value?.courseId;
   return String(resolved ?? fallback);
 };
 
@@ -700,6 +705,12 @@ export const normalizeLessonDetail = (payload, fallbackLesson) => {
     fallbackLesson?.title ?? 'Lesson',
     lesson?.mentorName ?? fallbackLesson?.mentorName
   );
+  const resolvedLessonId =
+    lesson?._id ??
+    lesson?.id ??
+    lesson?.lessonId ??
+    (String(normalizedLesson.id) === String(lesson?.courseId) ? fallbackLesson?.id : null) ??
+    fallbackLesson?.id;
 
   const resolvedVideoUrl =
     normalizedLesson.video?.url || fallbackLesson?.video?.url || '';
@@ -726,6 +737,7 @@ export const normalizeLessonDetail = (payload, fallbackLesson) => {
   return {
     ...fallbackLesson,
     ...normalizedLesson,
+    id: String(resolvedLessonId ?? fallbackLesson?.id ?? normalizedLesson.id),
     description: normalizedLesson.description || fallbackLesson?.description || '',
     assignmentDescription:
       normalizedLesson.assignmentDescription ||
