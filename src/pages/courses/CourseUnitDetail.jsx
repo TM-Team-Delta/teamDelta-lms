@@ -61,8 +61,8 @@ const CourseUnitDetail = () => {
   const {
     statusByUnitId,
     isCourseCompleted,
-    isLoading: isProgressLoading,
     hasResolvedProgress,
+    hasProgressSnapshot,
   } = useCourseProgress(course);
 
   const module = useMemo(() => {
@@ -93,7 +93,7 @@ const CourseUnitDetail = () => {
   }, [currentUnitIndex, module]);
 
   const unitStatus = currentUnit
-    ? hasResolvedProgress
+    ? hasProgressSnapshot
       ? statusByUnitId[currentUnit.id] || 'locked'
       : currentUnit.status || 'available'
     : 'locked';
@@ -147,7 +147,7 @@ const CourseUnitDetail = () => {
       activeModuleId={module.id}
       activeUnitId={currentUnit.id}
       statusByUnitId={statusByUnitId}
-      hasResolvedProgress={hasResolvedProgress}
+      hasResolvedProgress={hasProgressSnapshot}
       isCourseCompleted={isCourseCompleted}
     />
   );
